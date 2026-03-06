@@ -1,14 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Database, Network, FileText, Settings } from "lucide-react";
 import SearchPanel from "./components/SearchPanel";
 import EntityList from "./components/EntityList";
 import NetworkGraph from "./components/NetworkGraph";
 import DocumentPanel from "./components/DocumentPanel";
+import api, { Stats } from "./services/api";
 
 type Tab = "search" | "entities" | "network" | "documents" | "settings";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("search");
+  const [backendConnected, setBackendConnected] = useState(false);
+  const [stats, setStats] = useState<Stats>({ entities: 0, documents: 0, relationships: 0 });
+
+  useEffect(() => {
+    checkBackendHealth();
+    const interval = setInterval(checkBackendHealth, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const checkBackendHealth = async () => {
+    try {
+      const isHealthy = await api.checkHealth();
+      setBackendConnected(isHealthy);
+      if (isHealthy) {
+        const statsData = await api.getStats();
+        setStats(statsData);
+      }
+    } catch (error) {
+      setBackendConnected(false);
+    }
+  };
 
   const tabs = [
     { id: "search" as Tab, label: "Search", icon: Search },
@@ -21,7 +43,7 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case "search":
-        return <SearchPanel />;
+        return <SearchPanel backendConnected={backendConnected} />;
       case "entities":
         return <EntityList />;
       case "network":
@@ -36,7 +58,7 @@ function App() {
           </div>
         );
       default:
-        return <SearchPanel />;
+        return <SearchPanel backendConnected={backendConnected} />;
     }
   };
 
@@ -55,8 +77,13 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm">
-              ● Connected
+            <span className={`px-3 py-1 rounded-full text-sm flex items-center gap-2 ${
+              backendConnected 
+                ? "bg-green-500/20 text-green-400" 
+                : "bg-red-500/20 text-red-400"
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${backendConnected ? "bg-green-400" : "bg-red-400"}`} />
+              {backendConnected ? "Connected" : "Disconnected"}
             </span>
           </div>
         </div>
@@ -95,15 +122,15 @@ function App() {
             </h3>
             <div className="space-y-3">
               <div className="bg-gray-700/50 rounded-lg p-3">
-                <p className="text-2xl font-bold text-primary-400">127</p>
+                <p className="text-2xl font-bold text-primary-400">{stats.entities}</p>
                 <p className="text-sm text-gray-400">Entities</p>
               </div>
               <div className="bg-gray-700/50 rounded-lg p-3">
-                <p className="text-2xl font-bold text-green-400">2</p>
+                <p className="text-2xl font-bold text-green-400">{stats.documents}</p>
                 <p className="text-sm text-gray-400">Documents</p>
               </div>
               <div className="bg-gray-700/50 rounded-lg p-3">
-                <p className="text-2xl font-bold text-purple-400">0</p>
+                <p className="text-2xl font-bold text-purple-400">{stats.relationships}</p>
                 <p className="text-sm text-gray-400">Relationships</p>
               </div>
             </div>

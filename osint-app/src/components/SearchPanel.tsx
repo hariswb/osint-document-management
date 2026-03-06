@@ -1,52 +1,57 @@
 import { useState } from "react";
-import { Search, Loader2, Globe, FileText } from "lucide-react";
+import { Search, Loader2, Globe, FileText, AlertCircle } from "lucide-react";
+import api, { SearchResult } from "../services/api";
 
-interface SearchResult {
-  id: number;
-  title: string;
-  url: string;
-  snippet: string;
-  source: string;
+interface SearchPanelProps {
+  backendConnected: boolean;
 }
 
-export default function SearchPanel() {
+export default function SearchPanel({ backendConnected }: SearchPanelProps) {
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (!query.trim() || !backendConnected) return;
 
     setIsSearching(true);
+    setError(null);
+    setSuccess(null);
     
-    // Simulate search results for now
-    // In production, this would call the Tauri command to run Python search
-    setTimeout(() => {
-      setResults([
-        {
-          id: 1,
-          title: `Search results for "${query}"`,
-          url: "https://example.com/article-1",
-          snippet: "This is a sample search result showing content related to your query...",
-          source: "Web",
-        },
-        {
-          id: 2,
-          title: `Another article about ${query}`,
-          url: "https://example.com/article-2",
-          snippet: "More content related to your search query appears here...",
-          source: "News",
-        },
-      ]);
+    try {
+      const response = await api.searchWeb(query, 10);
+      setResults(response.results);
+    } catch (err) {
+      setError("Failed to search. Please try again.");
+      console.error("Search error:", err);
+    } finally {
       setIsSearching(false);
-    }, 1500);
+    }
   };
 
-  const handleScrape = async (result: SearchResult) => {
-    setSelectedResult(result);
-    // In production, this would call the Tauri command to scrape the URL
+  const handleProcess = async () => {
+    if (!query.trim() || !backendConnected) return;
+
+    setIsProcessing(true);
+    setError(null);
+    setSuccess(null);
+    
+    try {
+      const response = await api.processQuery(query, 5);
+      if (response.success) {
+        setSuccess(`Processed ${response.articles_processed} articles and extracted ${response.entities_extracted} entities!`);
+        setResults([]); // Clear search results
+      }
+    } catch (err) {
+      setError("Failed to process query. Please try again.");
+      console.error("Process error:", err);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -58,6 +63,29 @@ export default function SearchPanel() {
         </p>
       </div>
 
+      {!backendConnected && (
+        <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-yellow-400" />
+          <p className="text-yellow-400">
+            Backend not connected. Please start the Python API server.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-red-400" />
+          <p className="text-red-400">{error}</p>
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-6 bg-green-500/10 border border-green-500/30 rounded-lg p-4 flex items-center gap-3">
+          <div className="w-5 h-5 rounded-full bg-green-400 flex items-center justify-center text-gray-900 font-bold">✓</div>
+          <p className="text-green-400">{success}</p>
+        </div>
+      )}
+
       {/* Search Form */}
       <form onSubmit={handleSearch} className="mb-6">
         <div className="flex gap-3">
@@ -68,12 +96,13 @@ export default function SearchPanel() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Enter search query (e.g., 'Prabowo Subianto')..."
-              className="w-full pl-12 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-white"
+              disabled={!backendConnected}
+              className="w-full pl-12 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
           <button
             type="submit"
-            disabled={isSearching || !query.trim()}
+            disabled={isSearching || !query.trim() || !backendConnected}
             className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium flex items-center gap-2 transition-colors"
           >
             {isSearching ? (
@@ -85,6 +114,24 @@ export default function SearchPanel() {
               <>
                 <Search className="w-5 h-5" />
                 Search
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleProcess}
+            disabled={isProcessing || !query.trim() || !backendConnected}
+            className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium flex items-center gap-2 transition-colors"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <FileText className="w-5 h-5" />
+                Full Pipeline
               </>
             )}
           </button>
@@ -130,29 +177,12 @@ export default function SearchPanel() {
                     <h4 className="text-lg font-medium text-primary-400 mb-1">
                       {result.title}
                     </h4>
-                    <p className="text-sm text-gray-400 mb-2">{result.url}</p>
-                    <p className="text-gray-300">{result.snippet}</p>
+                    <p className="text-sm text-gray-400 mb-2">{result.href}</p>
+                    <p className="text-gray-300">{result.body}</p>
                   </div>
-                  <button
-                    onClick={() => handleScrape(result)}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    Scrape & Extract
-                  </button>
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* Selected Result Detail */}
-      {selectedResult && (
-        <div className="mt-6 p-4 bg-gray-800/50 border border-primary-500/30 rounded-lg">
-          <h3 className="font-semibold mb-2">Processing: {selectedResult.title}</h3>
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Scraping content and extracting entities...
           </div>
         </div>
       )}
