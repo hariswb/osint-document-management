@@ -1,0 +1,14 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+osint-cli/src/__pycache__/*
+osint-cli/src/*.py[cod]
+osint-cli/src/*$py.class
+
+# Python virtual environment
+osint-cli/venv/
+
+# OSINT data
+osint-cli/data/*

@@ -1,8 +1,8 @@
 # Design Document: Local OSINT NER & Network Viz Tool
 
-> **Version:** 1.0.0  
-> **Last Updated:** 2026-03-06  
-> **Status:** Phase 1 in Progress (CLI Prototype)
+> **Version:** 1.0.0
+> **Last Updated:** 2026-03-06
+> **Status:** Phase 1 ✅ Complete (CLI Prototype Working)
 
 **For detailed implementation specifications, see [IMPLEMENTATION.md](IMPLEMENTATION.md)**
 
@@ -304,24 +304,42 @@ KSEI/IDX Websites → Scrapling/HTTP → TXT/PDF Parser → Database → Network
 
 ## 7. Development Roadmap
 
-### Phase 1: Foundation
+### Phase 1: Foundation ✅ COMPLETE
 
 - [x] Setup DuckDB database with schema migrations
 - [x] Configure development environment (hot reload, debugging)
-- [ ] Initialize Tauri project with React frontend
-- [ ] Setup FastAPI sidecar with basic endpoints
-- [ ] Implement sidecar communication layer
-- [ ] Integrate DuckDuckGo search
-- [ ] Implement Scrapling-based scraper
-- [ ] Download and integrate `cahya/bert-base-indonesian-NER`
-- [ ] Implement text cleaning and article ranking
-- [ ] Basic entity extraction and storage
+- [x] Integrate DuckDuckGo search
+- [x] Implement Scrapling-based scraper
+- [x] Download and integrate `cahya/bert-base-indonesian-NER`
+- [x] Implement text cleaning and article ranking
+- [x] Basic entity extraction and storage
+- [ ] Initialize Tauri project with React frontend *(Phase 2)*
+- [ ] Setup FastAPI sidecar with basic endpoints *(Phase 2)*
+- [ ] Implement sidecar communication layer *(Phase 2)*
 
-**Deliverable:** CLI prototype (search, scrape, extract entities) - **IN PROGRESS** (2/10 tasks done)
+**Deliverable:** CLI prototype (search, scrape, extract entities) - **COMPLETE** ✅
 
-### Phase 2: Core Features
+**Usage:**
+```bash
+cd osint-cli
 
-- [ ] Design UI mockups
+# Full pipeline: Search → Scrape → Extract → Store
+uv run python src/main.py process "Prabowo Subianto" --max-results 5
+
+# Individual commands
+uv run python src/main.py search "query" --max-results 10
+uv run python src/main.py scrape "https://example.com" --extract-entities
+uv run python src/main.py ner "text to analyze" --store
+uv run python src/main.py entities --limit 50
+```
+
+### Phase 2: Core Features 🔄 IN PROGRESS
+
+- [x] Initialize project structure with FastAPI backend
+- [x] Setup Python development environment with UV
+- [x] Create database models (entities, relationships, documents, ksei_balancepos)
+- [ ] Design UI mockups (React + TypeScript)
+- [ ] Setup Tauri desktop shell
 - [ ] Implement search interface
 - [ ] Implement document upload interface
 - [ ] Integrate D3.js for network visualization
