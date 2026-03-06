@@ -2,7 +2,7 @@
 
 > **Version:** 1.0.0  
 > **Last Updated:** 2026-03-06  
-> **Status:** Planning Phase
+> **Status:** Phase 1 in Progress (CLI Prototype)
 
 **For detailed implementation specifications, see [IMPLEMENTATION.md](IMPLEMENTATION.md)**
 
@@ -306,18 +306,18 @@ KSEI/IDX Websites → Scrapling/HTTP → TXT/PDF Parser → Database → Network
 
 ### Phase 1: Foundation
 
+- [x] Setup DuckDB database with schema migrations
+- [x] Configure development environment (hot reload, debugging)
 - [ ] Initialize Tauri project with React frontend
 - [ ] Setup FastAPI sidecar with basic endpoints
 - [ ] Implement sidecar communication layer
-- [ ] Setup DuckDB database with schema migrations
-- [ ] Configure development environment (hot reload, debugging)
 - [ ] Integrate DuckDuckGo search
 - [ ] Implement Scrapling-based scraper
 - [ ] Download and integrate `cahya/bert-base-indonesian-NER`
 - [ ] Implement text cleaning and article ranking
 - [ ] Basic entity extraction and storage
 
-**Deliverable:** CLI prototype (search, scrape, extract entities)
+**Deliverable:** CLI prototype (search, scrape, extract entities) - **IN PROGRESS** (2/10 tasks done)
 
 ### Phase 2: Core Features
 
