@@ -343,7 +343,8 @@ uv run python src/main.py entities --limit 50
 - [x] Implement entity list component with filtering
 - [x] Integrate D3.js for network visualization
 - [x] Implement document upload panel
-- [ ] Connect frontend to Python backend via Tauri commands
+- [x] Connect frontend to Python backend via Tauri commands
+- [x] Create FastAPI server for backend API
 - [ ] Implement entity detail panels
 - [ ] Implement project management UI
 - [ ] Implement fuzzy matching for entity deduplication
@@ -356,14 +357,18 @@ uv run python src/main.py entities --limit 50
 
 **Current Status:**
 ```bash
-# Frontend (Tauri + React)
-cd osint-app
-npm install
-npm run tauri:dev  # Start desktop app
+# Quick Start - Run both backend and frontend
+./start.sh
 
-# Backend (Python CLI)
+# Or run manually:
+
+# Terminal 1: Start Python backend
 cd osint-cli
-uv run python src/main.py process "query" --max-results 5
+uv run python src/api_server.py
+
+# Terminal 2: Start Tauri frontend
+cd osint-app
+npm run tauri:dev
 ```
 
 ### Phase 3: Stock Ownership Integration

@@ -17,6 +17,10 @@ dependencies = [
     "scrapling>=0.3.0",
     "beautifulsoup4>=4.12.0",
     "scikit-learn>=1.4.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "python-multipart>=0.0.6",
+    "pydantic>=2.5.0",
 ]
 
 [project.scripts]
