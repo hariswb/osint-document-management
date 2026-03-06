@@ -1,14 +1,15 @@
-# Python cache
-__pycache__/
-*.py[cod]
-*$py.class
-
-osint-cli/src/__pycache__/*
-osint-cli/src/*.py[cod]
-osint-cli/src/*$py.class
-
 # Python virtual environment
-osint-cli/venv/
+osint-cli/.venv/
 
 # OSINT data
-osint-cli/data/*
+osint-cli/data/
+
+# Python cache
+__pycache__/
+
+# node_modules
+node_modules/
+
+# Tauri 
+osint-app/src-tauri/target/
+osint-app/dist/
