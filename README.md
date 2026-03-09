@@ -1,8 +1,8 @@
 # Design Document: Local OSINT NER & Network Viz Tool
 
 > **Version:** 1.0.0
-> **Last Updated:** 2026-03-06
-> **Status:** Phase 1 ✅ Complete (CLI Prototype Working)
+> **Last Updated:** 2026-03-08
+> **Status:** Phase 2 ✅ Complete (Desktop App with Project-Based OSINT Workflow)
 
 **For detailed implementation specifications, see [IMPLEMENTATION.md](IMPLEMENTATION.md)**
 
@@ -32,8 +32,15 @@ Desktop application for investigative journalists to extract, catalog, and visua
 
 ### 1.2 Primary Workflows
 
-1. **Passive Mode:** Processing manually uploaded local documents (PDFs, HTML, TXT)
-2. **Active Mode (OSINT):** Web search → intelligent scraping → entity extraction
+1. **Project-Based OSINT Workflow:**
+   - Create/select a project as your workspace
+   - Search the web for relevant documents
+   - Select and add search results to your project (as pending documents)
+   - Process documents to extract entities and relationships
+   - Visualize network graphs filtered by project
+   - All data (documents, entities, relationships) is scoped to the project
+
+2. **Passive Mode:** Processing manually uploaded local documents (PDFs, HTML, TXT)
 3. **Stock Ownership Analysis:** Download KSEI and IDX data → extract ownership structures → visualize networks
 
 ### 1.3 Privacy & Security Principles
@@ -151,53 +158,61 @@ Desktop application for investigative journalists to extract, catalog, and visua
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │           Frontend (React + TypeScript)                │ │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐ │ │
-│  │  │   Query  │  │  Document│  │  Network Graph      │ │ │
-│  │  │    UI    │  │  Upload  │  │  Visualization      │ │ │
+│  │  │ Project  │  │  Search  │  │  Documents/Entities │ │ │
+│  │  │  Manager │  │  Panel   │  │  /Network Views     │ │ │
 │  │  └──────────┘  └──────────┘  └──────────────────────┘ │ │
+│  │                                                          │
+│  │  - Project Selection as Workspace                      │ │
+│  │  - All Data Filtered by Current Project                │ │
+│  │  - Search → Pending Docs → Processing Flow             │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                           │ IPC                              │
 │                           ▼                                  │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │            Rust Core (Tauri Runtime)                   │ │
 │  │  - Sidecar process management                          │ │
+│  │  - Project-scoped database queries                     │ │
 │  │  - File system access                                  │ │
-│  │  - Database queries (DuckDB)                           │ │
 │  └────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
-                            │
-                            │ HTTP/WebSocket (localhost)
-                            ▼
+                             │
+                             │ HTTP/WebSocket (localhost)
+                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Python Sidecar (FastAPI Server)                 │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │  Web Search & Scraping Pipeline                        │ │
-│  │  - DuckDuckGo Search                                   │ │
+│  │  - DuckDuckGo Search (Region: Indonesia/International) │ │
 │  │  - Scrapling (HTML extraction)                         │ │
-│  │  - Text cleaning                                       │ │
+│  │  - Document Status: pending → processing → completed   │ │
 │  └────────────────────────────────────────────────────────┘ │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │  NLP Pipeline                                          │ │
 │  │  - cahya-ner (entity extraction)                       │ │
-│  │  - Keyword-based article ranking                       │ │
+│  │  - Pattern-based relationship extraction               │ │
+│  │  - Confidence scoring                                  │ │
 │  └────────────────────────────────────────────────────────┘ │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │  Data Layer                                            │ │
+│  │  - Project-based data isolation                        │ │
 │  │  - Entity resolution & deduplication                   │ │
 │  │  - Relationship extraction                             │ │
-│  │  - DuckDB storage                                      │ │
-│  │  - KSEI/IDX data integration                           │ │
+│  │  - DuckDB storage with project scoping                 │ │
+│  │  - Cascade delete (document → entities)                │ │
 │  └────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 OSINT Search Workflow
+### 4.2 OSINT Search Workflow (Project-Based)
 
-1. **Query Initiation** → User types query, frontend validates and dispatches
-2. **Web Search** → DuckDuckGo search, filter and prioritize results
-3. **Parallel Scraping** → Scrapling extraction with rate limiting
-4. **Article Ranking** → Keyword matching and TF-IDF scoring
-5. **Entity Extraction** → NER processing → deduplication → relationship extraction
-6. **Storage & Visualization** → Database persistence → network graph rendering
+1. **Project Selection** → User selects or creates a project as current workspace
+2. **Query Initiation** → User types query with region configuration (Indonesia/International)
+3. **Web Search** → DuckDuckGo search returns max 10 results
+4. **Result Selection** → All results initially checked; user can uncheck unwanted items
+5. **Add to Project** → Selected results become "pending" documents in project
+6. **Document Processing** → User clicks "Process" to scrape and extract entities
+7. **Entity Extraction** → NER processing with project-scoped storage
+8. **Visualization** → Network graph shows only entities from current project
 
 ### 4.3 Stock Ownership Workflow
 
@@ -333,27 +348,41 @@ uv run python src/main.py ner "text to analyze" --store
 uv run python src/main.py entities --limit 50
 ```
 
-### Phase 2: Core Features 🔄 IN PROGRESS
+### Phase 2: Core Features ✅ COMPLETE
 
 - [x] Initialize project structure with FastAPI backend
 - [x] Setup Python development environment with UV
 - [x] Create database models (entities, relationships, documents, ksei_balancepos)
 - [x] Setup Tauri desktop shell with React + TypeScript
-- [x] Implement search interface component
-- [x] Implement entity list component with filtering
-- [x] Integrate D3.js for network visualization
-- [x] Implement document upload panel
+- [x] Implement search interface component with region selection (Indonesia/International)
+- [x] Implement project-based workflow: Project → Search → Documents → Entities → Network
+- [x] Project selection as current workspace with data isolation
+- [x] Search result selection with checkboxes (all checked by default)
+- [x] "Add to Project" flow creating pending documents
+- [x] Document status management: pending → processing → completed → error
+- [x] Cascade delete: removing document deletes associated entities
+- [x] Duplicate detection based on URL when adding search results
+- [x] Implement entity list component with filtering by current project
+- [x] Integrate D3.js for network visualization with project filtering
+- [x] Implement document upload panel with status tracking
 - [x] Connect frontend to Python backend via Tauri commands
 - [x] Create FastAPI server for backend API
-- [ ] Implement entity detail panels
-- [ ] Implement project management UI
-- [ ] Implement fuzzy matching for entity deduplication
-- [ ] Build entity alias management
-- [ ] Implement co-occurrence relationship extraction
-- [ ] Add pattern-based relationship extraction
-- [ ] Build relationship confidence scoring
+- [x] Implement entity detail panels with tabs for overview, relationships, aliases, and documents
+- [x] Implement project management UI for creating, editing, and organizing projects
+- [x] Implement fuzzy matching for entity deduplication using sequence matching
+- [x] Build entity alias management with canonical name suggestion
+- [x] Implement co-occurrence relationship extraction from text
+- [x] Add pattern-based relationship extraction (employment, affiliation, family, ownership, location)
+- [x] Build relationship confidence scoring with multi-evidence boosting
+- [x] Modern UI redesign: slate color palette, compact buttons, less rounded corners
 
-**Deliverable:** Functional desktop app with visualization - **IN PROGRESS**
+**Deliverable:** Functional desktop app with project-based OSINT workflow - **COMPLETE ✅**
+
+**Workflow:**
+```
+1. Create/Select Project → 2. Search Web → 3. Select Results → 4. Add to Project
+→ 5. Process Documents → 6. View Entities/Network
+```
 
 **Current Status:**
 ```bash
@@ -448,27 +477,99 @@ npm run tauri:dev
 
 ---
 
+## Database Architecture
+
+### Current Approach: Raw SQL with DuckDB
+
+The application currently uses **raw SQL queries** with DuckDB for database operations:
+
+**Advantages:**
+- Direct control over queries and performance
+- No ORM overhead or abstraction complexity
+- DuckDB-specific optimizations (analytical queries, columnar storage)
+- Smaller dependency footprint
+- Easier to debug and optimize specific queries
+
+**Current Implementation:**
+```python
+# Example from database.py
+def insert_document(self, filename, file_path, ...):
+    self.conn.execute(
+        """
+        INSERT INTO documents (filename, file_path, ...)
+        VALUES (?, ?, ...)
+        """,
+        (filename, file_path, ...),
+    )
+```
+
+### ORM Migration Consideration
+
+**Issue Raised:** Consider using an ORM (like SQLAlchemy) for better query management.
+
+**Pros of ORM:**
+- Type safety and IDE autocomplete
+- Easier schema migrations
+- Database abstraction (could switch from DuckDB to PostgreSQL/SQLite)
+- Relationship handling (less manual JOIN writing)
+- Query builder for dynamic queries
+
+**Cons of ORM:**
+- Additional dependency and learning curve
+- Potential performance overhead for analytical queries
+- DuckDB has limited ORM support (SQLAlchemy dialect exists but is less mature)
+- Current raw SQL works well for the current scope
+
+**Recommendation:** 
+- **Current Phase:** Keep raw SQL - it provides the performance and control needed
+- **Future Phase:** Consider SQLAlchemy + Alembic if:
+  - Database complexity grows significantly
+  - Need to support multiple database backends
+  - Team size increases and type safety becomes critical
+  - Complex migrations become frequent
+
+**Current Tables:**
+- `entities` - Named entities (PERSON, ORGANIZATION, etc.)
+- `documents` - Document metadata with status tracking
+- `relationships` - Entity relationships
+- `projects` - Investigation projects
+- `project_documents` - Many-to-many junction
+- `entity_aliases` - Alternative names for entities
+- `entity_mentions` - Context where entities appear
+
+---
+
 ## Quick Reference
 
 ### Key Technologies
 - **Frontend:** React + TypeScript + D3.js + Radix UI + Tailwind
 - **Backend:** Python 3.11+ + FastAPI
 - **ML:** Transformers + PyTorch (cahya-ner)
-- **Search:** DuckDuckGo-Search
+- **Search:** DuckDuckGo-Search + Google Search (with Indonesia/International region support)
 - **Scraping:** Scrapling + Playwright
-- **Database:** DuckDB
+- **Database:** DuckDB with project-based data isolation
 - **Packaging:** Tauri + PyInstaller
 
 ### Data Sources
 - **KSEI Balancepos:** Aggregate ownership by investor type (daily/weekly)
 - **KSEI StatisEfek:** Company details and ownership percentages (daily/weekly)
 - **IDX Bulk PDF:** Market-wide >5% shareholders (daily)
+- **Web Documents:** URLs added from DuckDuckGo search results
+
+### Project-Based OSINT Workflow
+1. **Projects** → Create/select a project as your workspace
+2. **Search** → Search web (DuckDuckGo/Google, Indonesia/International regions) with max 10 results
+3. **Select** → All results checked by default; uncheck unwanted items
+4. **Add** → Selected results become "pending" documents in your project
+5. **Process** → Click "Process" or enable "Auto-process" to scrape and extract entities
+6. **View** → Entities and network graph scoped to current project only
 
 ### Key Metrics
 - Bundle size: <2GB (with model)
 - Memory: 4-8GB RAM
 - Response time: <10s search, <5s upload, <2s viz
 - Installation: <5 minutes
+- Max search results: 10 (default)
 
 ### Documentation
 - **High-level Architecture:** This file (README.md)

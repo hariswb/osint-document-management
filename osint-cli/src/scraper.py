@@ -1,4 +1,4 @@
-"""Web scraping module using Scrapling."""
+"""Web scraping module using Scrapling with Playwright fallback."""
 
 import re
 import time
@@ -23,7 +23,7 @@ class ScrapedArticle:
 
 
 class AdaptiveScraper:
-    """Adaptive web scraper with anti-bot bypass capabilities."""
+    """Adaptive web scraper with anti-bot bypass capabilities and Playwright fallback."""
 
     def __init__(self, delay: float = 1.0, timeout: int = 30):
         """
@@ -42,11 +42,16 @@ class AdaptiveScraper:
             "Accept-Encoding": "gzip, deflate, br",
             "DNT": "1",
             "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
         }
 
     def scrape(self, url: str) -> Optional[ScrapedArticle]:
         """
-        Scrape a single URL.
+        Scrape a single URL with fallback to Playwright for JS-heavy sites.
 
         Args:
             url: URL to scrape
@@ -54,6 +59,21 @@ class AdaptiveScraper:
         Returns:
             ScrapedArticle or None if failed
         """
+        # Try regular HTTP scraping first
+        article = self._scrape_http(url)
+        if article:
+            return article
+
+        # Fall back to Playwright for JS-heavy sites
+        print(f"HTTP scraping failed for {url}, trying Playwright fallback...")
+        article = self._scrape_playwright(url)
+        if article:
+            return article
+
+        return None
+
+    def _scrape_http(self, url: str) -> Optional[ScrapedArticle]:
+        """Scrape using HTTP requests."""
         try:
             time.sleep(self.delay)
 
@@ -63,9 +83,73 @@ class AdaptiveScraper:
                 response = client.get(url)
                 response.raise_for_status()
 
-                return self._parse_html(url, response.text)
+                # Check if response is HTML
+                content_type = response.headers.get("content-type", "")
+                if (
+                    "text/html" not in content_type
+                    and "application/xhtml" not in content_type
+                ):
+                    print(f"Skipping non-HTML content: {content_type}")
+                    return None
+
+                article = self._parse_html(url, response.text)
+
+                # Only return if we got meaningful content
+                if article and len(article.content.strip()) > 100:
+                    return article
+                else:
+                    print(
+                        f"HTTP scrape returned insufficient content ({len(article.content) if article else 0} chars)"
+                    )
+                    return None
+
         except Exception as e:
-            print(f"Error scraping {url}: {e}")
+            print(f"HTTP scraping error for {url}: {e}")
+            return None
+
+    def _scrape_playwright(self, url: str) -> Optional[ScrapedArticle]:
+        """Scrape using Playwright for JavaScript-heavy sites."""
+        try:
+            from playwright.sync_api import sync_playwright
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent=self.headers["User-Agent"],
+                    viewport={"width": 1920, "height": 1080},
+                )
+                page = context.new_page()
+
+                # Navigate and wait for content to load
+                page.goto(url, wait_until="networkidle", timeout=self.timeout * 1000)
+
+                # Wait a bit more for any lazy-loaded content
+                page.wait_for_timeout(2000)
+
+                # Get the page content
+                html = page.content()
+
+                browser.close()
+
+                article = self._parse_html(url, html)
+
+                # Only return if we got meaningful content
+                if article and len(article.content.strip()) > 100:
+                    print(
+                        f"Playwright successfully scraped {len(article.content)} chars"
+                    )
+                    return article
+                else:
+                    print(
+                        f"Playwright returned insufficient content ({len(article.content) if article else 0} chars)"
+                    )
+                    return None
+
+        except ImportError:
+            print("Playwright not installed, skipping fallback")
+            return None
+        except Exception as e:
+            print(f"Playwright scraping error for {url}: {e}")
             return None
 
     def scrape_multiple(self, urls: List[str]) -> List[ScrapedArticle]:
@@ -233,3 +317,16 @@ class AdaptiveScraper:
         # Remove excessive newlines
         text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
+
+
+def extract_domain(url: str) -> str:
+    """Extract domain from URL."""
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc
+        # Remove www. prefix if present
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain
+    except Exception:
+        return ""
