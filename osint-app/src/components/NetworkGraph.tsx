@@ -79,7 +79,7 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
       const result = await api.getNetworkData(filters);
       setData(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load network data");
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

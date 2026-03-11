@@ -1111,7 +1111,7 @@ async def get_network_data(
         # One canonical node per unique (name, entity_type) using MIN(id)
         if project_id:
             query = """
-                SELECT MIN(e.id) as id, e.name, e.entity_type, MAX(e.confidence) as confidence
+                SELECT MIN(e.id) as id, MIN(e.name) as name, e.entity_type, MAX(e.confidence) as confidence
                 FROM entities e
                 JOIN project_documents pd ON e.source_doc_id = pd.doc_id
                 WHERE pd.project_id = ?
@@ -1119,7 +1119,7 @@ async def get_network_data(
             params = [project_id]
         else:
             query = """
-                SELECT MIN(id) as id, name, entity_type, MAX(confidence) as confidence
+                SELECT MIN(id) as id, MIN(name) as name, entity_type, MAX(confidence) as confidence
                 FROM entities
                 WHERE 1=1
             """
