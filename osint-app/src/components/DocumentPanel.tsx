@@ -184,55 +184,44 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
   }
 
   return (
-    <div className="p-6">
-      {/* Project Header */}
-      <div className="mb-6 pb-4 border-b border-slate-700">
-        <div className="flex items-center gap-2 mb-2">
-          <FolderKanban className="w-5 h-5 text-blue-400" />
-          <span className="text-sm text-slate-400">Project:</span>
-          <span className="text-lg font-semibold text-slate-200">{currentProject.name}</span>
-        </div>
-        <p className="text-sm text-slate-500">
-          {documents.length} document{documents.length !== 1 ? 's' : ''} in this project
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
-            <FileText className="w-6 h-6" />
-            Documents
-          </h2>
-          <p className="text-slate-400">
-            View and manage documents in this project
-          </p>
+    <div className="p-4">
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <FileText className="w-3.5 h-3.5" />
+          <span className="text-slate-300 font-medium">Documents</span>
+          <span className="text-slate-600">·</span>
+          <FolderKanban className="w-3 h-3 text-blue-500" />
+          <span className="text-blue-400">{currentProject.name}</span>
+          <span className="text-slate-600">·</span>
+          <span className="font-mono">{documents.length} doc{documents.length !== 1 ? 's' : ''}</span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={fetchDocuments}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-sm transition-colors text-sm"
+            className="flex items-center gap-1.5 px-2 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-sm transition-colors text-xs"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
           {documents.some((d) => d.status === "pending" || d.status === "error") && (
             <button
               onClick={handleProcessAll}
               disabled={processingAll}
-              className="flex items-center gap-2 px-3 py-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 disabled:opacity-50 rounded-sm transition-colors text-sm font-medium"
+              className="flex items-center gap-1.5 px-2 py-1 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 disabled:opacity-50 rounded-sm transition-colors text-xs font-medium"
             >
               {processingAll ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <PlayCircle className="w-4 h-4" />
+                <PlayCircle className="w-3.5 h-3.5" />
               )}
               Process All
             </button>
           )}
-          <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors text-sm">
-            <Upload className="w-4 h-4" />
-            Upload Files
+          <button className="flex items-center gap-1.5 px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors text-xs">
+            <Upload className="w-3.5 h-3.5" />
+            Upload
           </button>
         </div>
       </div>
@@ -242,15 +231,14 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-sm p-8 mb-6 text-center transition-colors ${
+        className={`border border-dashed rounded-sm px-4 py-3 mb-3 flex items-center gap-3 transition-colors ${
           isDragging
             ? "border-blue-500 bg-blue-500/10"
             : "border-slate-700 hover:border-slate-600"
         }`}
       >
-        <Upload className="w-10 h-10 text-slate-500 mx-auto mb-3" />
-        <p className="text-slate-400 mb-1">Drag and drop files here</p>
-        <p className="text-sm text-slate-500">or click to browse</p>
+        <Upload className="w-4 h-4 text-slate-500 flex-shrink-0" />
+        <p className="text-xs text-slate-500">Drag and drop files, or use Upload button</p>
       </div>
 
       {/* Documents List */}
@@ -261,7 +249,7 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
             return (
               <div
                 key={doc.id}
-                className="flex items-center gap-4 p-4 bg-slate-800 border border-slate-700 rounded-sm hover:border-slate-600 transition-colors"
+                className="flex items-center gap-3 p-2.5 bg-slate-800 border border-slate-700 rounded-sm hover:border-slate-600 transition-colors"
               >
                 <div className="flex-shrink-0">
                   {fileTypeIcons[doc.doc_type || 'txt'] || fileTypeIcons.txt}

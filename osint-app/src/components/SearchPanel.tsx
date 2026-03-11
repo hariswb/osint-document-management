@@ -136,25 +136,15 @@ export default function SearchPanel({ backendConnected, currentProject, onDocume
   const canAddToProject = currentProject !== null && selectedResults.size > 0;
 
   return (
-    <div className="p-6">
-      {/* Project Header */}
-      <div className="mb-6 pb-4 border-b border-slate-700">
-        <div className="flex items-center gap-2 mb-2">
-          <FolderKanban className="w-5 h-5 text-blue-400" />
-          <span className="text-sm text-slate-400">Current Project:</span>
-          <span className="text-lg font-semibold text-slate-200">{currentProject.name}</span>
-          <span className="text-xs text-slate-500 font-mono">#{currentProject.id}</span>
-        </div>
-        <p className="text-sm text-slate-500">
-          Search results will be added to this project as pending documents
-        </p>
-      </div>
-
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2">Web Search</h2>
-        <p className="text-slate-400">
-          Search the web and curate results into your project
-        </p>
+    <div className="p-4">
+      {/* Page Header */}
+      <div className="flex items-center gap-2 text-xs text-slate-500 mb-4">
+        <Search className="w-3.5 h-3.5" />
+        <span className="text-slate-300 font-medium">Web Search</span>
+        <span className="text-slate-600">·</span>
+        <FolderKanban className="w-3 h-3 text-blue-500" />
+        <span className="text-blue-400">{currentProject.name}</span>
+        <span className="text-slate-600 font-mono">#{currentProject.id}</span>
       </div>
 
       {!backendConnected && (

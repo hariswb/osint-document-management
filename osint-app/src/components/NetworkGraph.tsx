@@ -25,11 +25,14 @@ interface NetworkData {
 }
 
 const ENTITY_TYPES = [
-  { type: "PER", label: "Person", color: "#3b82f6" }, // blue-500
-  { type: "ORG", label: "Organization", color: "#a855f7" }, // purple-500
-  { type: "GPE", label: "Location", color: "#22c55e" }, // green-500
-  { type: "DAT", label: "Date", color: "#eab308" }, // yellow-500
-  { type: "EVT", label: "Event", color: "#ef4444" }, // red-500
+  { type: "PER", label: "Person", color: "#3b82f6" },
+  { type: "ORG", label: "Organization", color: "#a855f7" },
+  { type: "NOR", label: "Political Org", color: "#f97316" },
+  { type: "LAW", label: "Law", color: "#f59e0b" },
+  { type: "PRD", label: "Product", color: "#06b6d4" },
+  { type: "GPE", label: "Geo-Political", color: "#22c55e" },
+  { type: "MON", label: "Money", color: "#eab308" },
+  { type: "LOC", label: "Location", color: "#10b981" },
 ];
 
 const getNodeColor = (type: string): string => {
@@ -159,7 +162,7 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
     if (!containerRef.current || loading) return;
 
     const width = containerRef.current.clientWidth;
-    const height = 500;
+    const height = containerRef.current.clientHeight || 500;
 
     containerRef.current.innerHTML = "";
 
@@ -381,62 +384,49 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
   };
 
   return (
-    <div className="p-6">
-      {/* Project Header */}
-      <div className="mb-6 pb-4 border-b border-slate-700">
-        <div className="flex items-center gap-2 mb-2">
-          <FolderKanban className="w-5 h-5 text-blue-400" />
-          <span className="text-sm text-slate-400">Project:</span>
-          <span className="text-lg font-semibold text-slate-200">{currentProject.name}</span>
-        </div>
-        <p className="text-sm text-slate-500">
-          Showing network of entities from documents in this project
-        </p>
-      </div>
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
-            <Network className="w-6 h-6" />
-            Network
-          </h2>
-          <p className="text-slate-400">
-            Interactive graph of entities and their relationships
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="flex flex-col" style={{ height: "calc(100vh - 56px)" }}>
+      {/* Compact top controls */}
+      <div className="flex-shrink-0 px-3 py-2 border-b border-slate-700 bg-slate-800/50">
+        {/* Header row */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <Network className="w-3.5 h-3.5" />
+            <span className="text-slate-300 font-medium">Network</span>
+            <span className="text-slate-600">·</span>
+            <FolderKanban className="w-3 h-3 text-blue-500" />
+            <span className="text-blue-400">{currentProject.name}</span>
+            <span className="text-slate-600">·</span>
+            <span className="font-mono text-slate-300">{data.nodes.length}</span><span>nodes</span>
+            <span className="font-mono text-slate-300 ml-1">{data.links.length}</span><span>edges</span>
+            {filteredData.nodes.length !== data.nodes.length && (
+              <>
+                <span className="text-slate-600">·</span>
+                <span className="font-mono text-green-400">{filteredData.nodes.length}</span>
+                <span>filtered</span>
+              </>
+            )}
+          </div>
           <button
             onClick={fetchNetworkData}
             disabled={loading}
-            className="p-2 bg-slate-800 hover:bg-slate-700 rounded-sm transition-colors disabled:opacity-50"
+            className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors disabled:opacity-50"
           >
-            <RefreshCw
-              className={`w-5 h-5 ${loading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
-      </div>
 
-      {/* Filter Bar */}
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 mb-4">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Entity Type Filters */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400 mr-2">Show:</span>
+        {/* Filter row */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Entity Type Toggles */}
+          <div className="flex flex-wrap gap-1">
             {ENTITY_TYPES.map(({ type, label, color }) => (
               <button
                 key={type}
                 onClick={() => toggleType(type)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  selectedTypes.includes(type)
-                    ? "ring-1 ring-offset-1 ring-offset-gray-900"
-                    : "opacity-40"
+                className={`px-2 py-0.5 rounded-sm text-xs font-medium transition-all ${
+                  selectedTypes.includes(type) ? "ring-1 ring-offset-1 ring-offset-slate-900" : "opacity-35"
                 }`}
-                style={{
-                  backgroundColor: color + "20",
-                  color: color,
-                }}
+                style={{ backgroundColor: color + "20", color }}
                 title={label}
               >
                 {type}
@@ -444,15 +434,15 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
             ))}
           </div>
 
-          <div className="h-6 w-px bg-gray-700" />
+          <div className="w-px h-4 bg-slate-600" />
 
-          {/* Context Window Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">Window:</span>
+          {/* Context Window */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-500">Window:</span>
             <select
               value={contextWindow}
               onChange={(e) => setContextWindow(e.target.value as "sentence" | "paragraph" | "sliding")}
-              className="px-2 py-1.5 bg-gray-900 border border-gray-700 rounded-md text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="px-1.5 py-0.5 bg-slate-900 border border-slate-700 rounded-sm text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="sentence">Sentence</option>
               <option value="paragraph">Paragraph</option>
@@ -466,107 +456,61 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
                 max={1000}
                 step={50}
                 onChange={(e) => setWindowSize(Number(e.target.value))}
-                className="w-20 px-2 py-1.5 bg-gray-900 border border-gray-700 rounded-md text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                title="Window size in words"
+                className="w-16 px-1.5 py-0.5 bg-slate-900 border border-slate-700 rounded-sm text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
           </div>
 
-          <div className="h-6 w-px bg-gray-700" />
+          <div className="w-px h-4 bg-slate-600" />
 
-          {/* Hide Input */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">Hide:</span>
+          {/* Hide entity input */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-500">Hide:</span>
             <input
               type="text"
               value={hideInput}
               onChange={(e) => setHideInput(e.target.value)}
               onKeyDown={handleHideSubmit}
-              placeholder="Enter entity name & press Enter"
-              className="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-md text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
+              placeholder="Entity name + Enter"
+              className="px-2 py-0.5 bg-slate-900 border border-slate-700 rounded-sm text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 w-36"
             />
-          </div>
-        </div>
-
-        {/* Exclusion Pills */}
-        {excludedEntities.length > 0 && (
-          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700/50">
-            <span className="text-xs text-gray-500">Hidden:</span>
             {excludedEntities.map((entity) => (
               <span
                 key={entity}
-                className="inline-flex items-center gap-1 px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded-full"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 text-red-400 text-xs rounded-sm"
               >
                 {entity}
-                <button
-                  onClick={() => removeExcluded(entity)}
-                  className="hover:text-red-300"
-                >
-                  <X className="w-3 h-3" />
+                <button onClick={() => removeExcluded(entity)} className="hover:text-red-300">
+                  <X className="w-2.5 h-2.5" />
                 </button>
               </span>
             ))}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-6 mb-4">
-        {ENTITY_TYPES.filter(({ type }) => selectedTypes.includes(type)).map(
-          ({ type, label, color }) => (
-            <div key={type} className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: color }}
-              />
-              <span className="text-sm text-gray-400">{label}</span>
-            </div>
-          )
-        )}
-      </div>
-
-      {/* Graph Container */}
-      <div className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
+      {/* Graph Canvas — takes all remaining height */}
+      <div className="flex-1 bg-slate-900 overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center h-[500px]">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <span className="ml-3 text-gray-400">Loading network data...</span>
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+            <span className="ml-2 text-sm text-slate-400">Loading network data...</span>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-[500px]">
+          <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <p className="text-red-400 mb-2">{error}</p>
+              <p className="text-red-400 text-sm mb-2">{error}</p>
               <button
                 onClick={fetchNetworkData}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm"
+                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm text-xs"
               >
                 Retry
               </button>
             </div>
           </div>
         ) : (
-          <div ref={containerRef} className="w-full" style={{ height: "500px" }} />
+          <div ref={containerRef} className="w-full h-full" />
         )}
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mt-4">
-        <div className="bg-gray-800 rounded-lg p-4">
-          <p className="text-2xl font-bold text-white">{data.nodes.length}</p>
-          <p className="text-sm text-gray-400">Total Nodes</p>
-        </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <p className="text-2xl font-bold text-primary-400">
-            {data.links.length}
-          </p>
-          <p className="text-sm text-gray-400">Total Relationships</p>
-        </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <p className="text-2xl font-bold text-green-400">
-            {filteredData.nodes.length}
-          </p>
-          <p className="text-sm text-gray-400">Filtered Nodes</p>
-        </div>
       </div>
     </div>
   );

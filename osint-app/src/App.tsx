@@ -135,7 +135,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+    <div className="h-screen bg-slate-900 text-slate-100 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="bg-slate-800 border-b border-slate-700 px-4 py-2 h-14 flex-none">
         <div className="flex items-center justify-between h-full">
