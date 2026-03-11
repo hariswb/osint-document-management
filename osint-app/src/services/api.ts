@@ -126,6 +126,8 @@ export interface NetworkFilters {
   projectId?: number;
   entityTypes?: string;
   excludeEntities?: string;
+  contextWindow?: "sentence" | "paragraph" | "sliding";
+  windowSize?: number;
 }
 
 export interface DocumentProcessOptions {
@@ -311,6 +313,8 @@ export const api = {
       projectId: filters.projectId || null,
       entityTypes: filters.entityTypes || null,
       excludeEntities: filters.excludeEntities || null,
+      contextWindow: filters.contextWindow || null,
+      windowSize: filters.windowSize || null,
     });
   },
 

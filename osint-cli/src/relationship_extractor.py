@@ -1,6 +1,7 @@
 """Relationship extraction module for entity relationships."""
 
 import re
+import math
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from collections import defaultdict
@@ -83,6 +84,173 @@ class RelationshipExtractor:
         # Handle Indonesian sentence delimiters
         sentences = re.split(r"[.!?。]+", text)
         return [s.strip() for s in sentences if len(s.strip()) > 10]
+
+    def split_paragraphs(self, text: str) -> List[str]:
+        """Split text into paragraphs."""
+        paragraphs = re.split(r"\n\s*\n+", text)
+        # Fall back to single newlines if no double-newlines found
+        if len(paragraphs) <= 1:
+            paragraphs = text.split("\n")
+        return [p.strip() for p in paragraphs if len(p.strip()) > 20]
+
+    def sliding_windows(self, text: str, window_size: int = 300, step: int = None) -> List[str]:
+        """Split text into overlapping sliding word windows."""
+        if step is None:
+            step = window_size // 2
+        tokens = text.split()
+        if len(tokens) <= window_size:
+            return [text]
+        windows = []
+        for i in range(0, len(tokens) - window_size + 1, step):
+            windows.append(" ".join(tokens[i : i + window_size]))
+        return windows
+
+    def _log_likelihood(self, k: int, ki: float, kj: float, kij: float) -> float:
+        """Compute Log-Likelihood significance (G²) for co-occurrence."""
+        def xlogy(x: float) -> float:
+            return x * math.log(x) if x > 0 else 0.0
+
+        o11 = kij
+        o12 = ki - kij
+        o21 = kj - kij
+        o22 = k - ki - kj + kij
+
+        ll = 2.0 * (
+            xlogy(o11) + xlogy(o12) + xlogy(o21) + xlogy(o22)
+            - xlogy(ki) - xlogy(k - ki)
+            - xlogy(kj) - xlogy(k - kj)
+            + xlogy(k)
+        )
+        return max(0.0, ll)
+
+    def compute_cooccurrence_network(
+        self,
+        documents: List[dict],
+        window_type: str = "sentence",
+        window_size: int = 300,
+        min_cooc: int = 1,
+    ) -> List[dict]:
+        """Compute entity co-occurrence network from documents using sub-document windows.
+
+        Args:
+            documents: List of {"id": int, "content": str, "entity_names": List[str]}
+            window_type: "sentence" | "paragraph" | "sliding"
+            window_size: word count for sliding windows (ignored for sentence/paragraph)
+            min_cooc: minimum co-occurrence count to include an edge
+
+        Returns:
+            List of {"source": name, "target": name, "weight": float,
+                     "count": int, "evidence": str} sorted by weight descending.
+        """
+        try:
+            from scipy.sparse import csr_matrix
+            import numpy as np
+        except ImportError:
+            # Fallback: use pure-Python lists instead of sparse matrix
+            csr_matrix = None
+            np = None
+
+        # Collect all unique entity names (case-insensitive, preserve first-seen casing)
+        seen_lower: set = set()
+        all_entity_names: List[str] = []
+        for doc in documents:
+            for name in doc.get("entity_names", []):
+                key = name.lower()
+                if key not in seen_lower:
+                    seen_lower.add(key)
+                    all_entity_names.append(name)
+
+        n_entities = len(all_entity_names)
+        if n_entities < 2:
+            return []
+
+        name_to_idx = {name.lower(): i for i, name in enumerate(all_entity_names)}
+
+        # Build per-window entity presence records
+        # window_records: list of (window_text, frozenset_of_entity_indices)
+        window_records: List[tuple] = []
+
+        for doc in documents:
+            content = doc.get("content", "")
+            if not content:
+                continue
+            entity_names_lower = [n.lower() for n in doc.get("entity_names", [])]
+
+            if window_type == "sentence":
+                windows = self._split_sentences(content)
+            elif window_type == "paragraph":
+                windows = self.split_paragraphs(content)
+            else:
+                windows = self.sliding_windows(content, window_size=window_size)
+
+            for window in windows:
+                window_lower = window.lower()
+                present = frozenset(
+                    name_to_idx[name]
+                    for name in entity_names_lower
+                    if name in name_to_idx and name in window_lower
+                )
+                if len(present) >= 2:
+                    window_records.append((window, present))
+
+        n_windows = len(window_records)
+        if n_windows == 0:
+            return []
+
+        # Build co-occurrence counts and evidence in one pass
+        cooc_counts: Dict[tuple, int] = {}
+        evidence_map: Dict[tuple, List[str]] = {}
+
+        for window_text, present in window_records:
+            present_list = sorted(present)
+            for pi, ei in enumerate(present_list):
+                for ej in present_list[pi + 1 :]:
+                    key = (ei, ej)
+                    cooc_counts[key] = cooc_counts.get(key, 0) + 1
+                    if len(evidence_map.get(key, [])) < 3:
+                        evidence_map.setdefault(key, []).append(window_text)
+
+        if not cooc_counts:
+            return []
+
+        # Per-entity window counts (ki, kj) using sparse matrix for accuracy
+        if csr_matrix is not None and np is not None:
+            rows, cols, data = [], [], []
+            for w_idx, (_, present) in enumerate(window_records):
+                for e_idx in present:
+                    rows.append(w_idx)
+                    cols.append(e_idx)
+                    data.append(1.0)
+            X = csr_matrix(
+                (data, (rows, cols)), shape=(n_windows, n_entities), dtype=float
+            )
+            ki_arr = np.asarray(X.sum(axis=0)).flatten()
+        else:
+            ki_arr = [0.0] * n_entities
+            for _, present in window_records:
+                for e_idx in present:
+                    ki_arr[e_idx] += 1
+
+        k = float(n_windows)
+
+        edges = []
+        for (ei, ej), kij in cooc_counts.items():
+            if kij < min_cooc:
+                continue
+            ki = float(ki_arr[ei])
+            kj = float(ki_arr[ej])
+            ll = self._log_likelihood(k, ki, kj, float(kij))
+            evidence_snippets = evidence_map.get((ei, ej), [])
+            edges.append({
+                "source": all_entity_names[ei],
+                "target": all_entity_names[ej],
+                "weight": ll,
+                "count": kij,
+                "evidence": " | ".join(evidence_snippets[:3]),
+            })
+
+        edges.sort(key=lambda e: e["weight"], reverse=True)
+        return edges
 
     def _extract_patterns(
         self, sentence: str, entities: List[Dict]

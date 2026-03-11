@@ -931,6 +931,10 @@ async def process_document(doc_id: int, request: DocumentProcessRequest):
                     status_code=400, detail=f"Failed to read document: {str(e)}"
                 )
 
+        # Store raw content for later co-occurrence analysis
+        if content:
+            db_manager.update_document_content(doc_id_val, content)
+
         entities_extracted = 0
 
         # Extract entities if NER is enabled
@@ -1032,6 +1036,10 @@ async def batch_process_documents(request: BatchProcessRequest):
                         db_manager.update_document_status(doc_id, "error")
                         continue
 
+                # Store raw content for later co-occurrence analysis
+                if content:
+                    db_manager.update_document_content(doc_id, content)
+
                 # Update status to processing
                 db_manager.update_document_status(doc_id, "processing")
 
@@ -1089,6 +1097,8 @@ async def get_network_data(
     project_id: Optional[int] = None,
     entity_types: Optional[str] = None,
     exclude_entities: Optional[str] = None,
+    context_window: str = "sentence",
+    window_size: int = 300,
 ):
     """Get all entities and relationships for network graph visualization.
 
@@ -1096,6 +1106,8 @@ async def get_network_data(
         project_id: Optional project ID to filter entities
         entity_types: Comma-separated list of entity types to include (e.g., "PER,ORG,GPE")
         exclude_entities: Comma-separated list of entity names to exclude
+        context_window: Co-occurrence window strategy: "sentence" | "paragraph" | "sliding"
+        window_size: Word count for sliding windows (ignored for sentence/paragraph)
     """
     try:
         # Parse entity types filter
@@ -1116,7 +1128,7 @@ async def get_network_data(
                 JOIN project_documents pd ON e.source_doc_id = pd.doc_id
                 WHERE pd.project_id = ?
             """
-            params = [project_id]
+            params: List = [project_id]
         else:
             query = """
                 SELECT MIN(id) as id, MIN(name) as name, entity_type, MAX(confidence) as confidence
@@ -1132,13 +1144,12 @@ async def get_network_data(
 
         query += f" GROUP BY LOWER({'e.' if project_id else ''}name), {'e.' if project_id else ''}entity_type"
 
-        # Execute entity query
         cursor = db_manager.conn.execute(query, params)
         entity_rows = cursor.fetchall()
 
         # Process entities and apply exclusion filter
         nodes = []
-        entity_ids = set()
+        name_to_node_id: Dict[str, int] = {}  # lower(name) -> canonical int id
 
         for row in entity_rows:
             entity_id = row[0]
@@ -1146,11 +1157,10 @@ async def get_network_data(
             entity_type = row[2]
             confidence = row[3]
 
-            # Skip if in exclude list
             if exclude_filter and name.lower() in exclude_filter:
                 continue
 
-            entity_ids.add(entity_id)
+            name_to_node_id[name.lower()] = entity_id
             nodes.append(
                 {
                     "id": str(entity_id),
@@ -1160,55 +1170,100 @@ async def get_network_data(
                 }
             )
 
-        if not entity_ids:
+        if not nodes:
             return {"nodes": [], "links": []}
 
-        # Derive co-occurrence edges using name-based join mapped to canonical IDs.
-        # Two entities are connected if they share a document; MIN(id) gives the same
-        # canonical ID used in the nodes query above.
+        entity_ids = set(name_to_node_id.values())
+
+        # Compute sub-document co-occurrence edges
+        links: List[Dict] = []
+
         if project_id:
-            cooc_query = """
-                SELECT
-                    MIN(e1.id) as source_id,
-                    MIN(e2.id) as target_id,
-                    COUNT(DISTINCT e1.source_doc_id) as doc_count
-                FROM entities e1
-                JOIN entities e2
-                    ON e1.source_doc_id = e2.source_doc_id
-                    AND LOWER(e1.name) < LOWER(e2.name)
-                JOIN project_documents pd ON e1.source_doc_id = pd.doc_id
-                WHERE pd.project_id = ?
-                GROUP BY LOWER(e1.name), e1.entity_type, LOWER(e2.name), e2.entity_type
-            """
-            cooc_params = [project_id]
+            documents = db_manager.get_project_documents_with_content(project_id)
         else:
-            cooc_query = """
-                SELECT
-                    MIN(e1.id) as source_id,
-                    MIN(e2.id) as target_id,
-                    COUNT(DISTINCT e1.source_doc_id) as doc_count
-                FROM entities e1
-                JOIN entities e2
-                    ON e1.source_doc_id = e2.source_doc_id
-                    AND LOWER(e1.name) < LOWER(e2.name)
-                GROUP BY LOWER(e1.name), e1.entity_type, LOWER(e2.name), e2.entity_type
-            """
-            cooc_params = []
+            # No project scope: fetch all documents with content
+            all_doc_rows = db_manager.conn.execute(
+                "SELECT id, content FROM documents WHERE content IS NOT NULL AND content != ''"
+            ).fetchall()
+            documents = []
+            for doc_id_row, doc_content in all_doc_rows:
+                entity_rows_doc = db_manager.conn.execute(
+                    "SELECT DISTINCT name FROM entities WHERE source_doc_id = ?",
+                    (doc_id_row,),
+                ).fetchall()
+                documents.append({
+                    "id": doc_id_row,
+                    "content": doc_content,
+                    "entity_names": [r[0] for r in entity_rows_doc],
+                })
 
-        cooc_cursor = db_manager.conn.execute(cooc_query, cooc_params)
-        cooc_rows = cooc_cursor.fetchall()
+        if documents:
+            # Filter entity names to only include those that passed type/exclude filters
+            visible_names_lower = set(name_to_node_id.keys())
+            for doc in documents:
+                doc["entity_names"] = [
+                    n for n in doc["entity_names"] if n.lower() in visible_names_lower
+                ]
 
-        # Only emit edges where both endpoints survived type/exclude filtering
-        links = [
-            {
-                "source": str(row[0]),
-                "target": str(row[1]),
-                "relationship_type": "co-occurrence",
-                "confidence": min(1.0, 0.5 + (row[2] - 1) * 0.1),
-            }
-            for row in cooc_rows
-            if row[0] in entity_ids and row[1] in entity_ids
-        ]
+            edges = relationship_extractor.compute_cooccurrence_network(
+                documents,
+                window_type=context_window,
+                window_size=window_size,
+            )
+
+            # Normalise LL weights to [0, 1] for the confidence field
+            max_weight = max((e["weight"] for e in edges), default=1.0) or 1.0
+
+            for edge in edges:
+                src_name = edge["source"].lower()
+                tgt_name = edge["target"].lower()
+                src_id = name_to_node_id.get(src_name)
+                tgt_id = name_to_node_id.get(tgt_name)
+                if src_id is None or tgt_id is None:
+                    continue
+                if src_id not in entity_ids or tgt_id not in entity_ids:
+                    continue
+                links.append({
+                    "source": str(src_id),
+                    "target": str(tgt_id),
+                    "relationship_type": "co-occurrence",
+                    "confidence": round(edge["weight"] / max_weight, 4),
+                    "evidence": edge.get("evidence") or None,
+                    "count": edge.get("count", 1),
+                })
+        else:
+            # No stored content yet — fall back to document-level co-occurrence
+            if project_id:
+                cooc_query = """
+                    SELECT MIN(e1.id), MIN(e2.id), COUNT(DISTINCT e1.source_doc_id)
+                    FROM entities e1
+                    JOIN entities e2
+                        ON e1.source_doc_id = e2.source_doc_id
+                        AND LOWER(e1.name) < LOWER(e2.name)
+                    JOIN project_documents pd ON e1.source_doc_id = pd.doc_id
+                    WHERE pd.project_id = ?
+                    GROUP BY LOWER(e1.name), e1.entity_type, LOWER(e2.name), e2.entity_type
+                """
+                cooc_params: List = [project_id]
+            else:
+                cooc_query = """
+                    SELECT MIN(e1.id), MIN(e2.id), COUNT(DISTINCT e1.source_doc_id)
+                    FROM entities e1
+                    JOIN entities e2
+                        ON e1.source_doc_id = e2.source_doc_id
+                        AND LOWER(e1.name) < LOWER(e2.name)
+                    GROUP BY LOWER(e1.name), e1.entity_type, LOWER(e2.name), e2.entity_type
+                """
+                cooc_params = []
+            for row in db_manager.conn.execute(cooc_query, cooc_params).fetchall():
+                if row[0] in entity_ids and row[1] in entity_ids:
+                    links.append({
+                        "source": str(row[0]),
+                        "target": str(row[1]),
+                        "relationship_type": "co-occurrence",
+                        "confidence": min(1.0, 0.5 + (row[2] - 1) * 0.1),
+                        "evidence": None,
+                    })
 
         return {"nodes": nodes, "links": links}
 
@@ -1276,6 +1331,9 @@ async def add_search_results_to_project(request: AddSearchResultsRequest):
                         # Scrape the URL
                         article = scraper.scrape(file_path)
                         if article and article.content:
+                            # Store raw content for co-occurrence analysis
+                            db_manager.update_document_content(doc_id_val, article.content)
+
                             # Extract entities
                             entities = ner_extractor.extract(article.content)
 

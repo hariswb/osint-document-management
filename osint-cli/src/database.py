@@ -149,7 +149,12 @@ class DatabaseManager:
             )
         """)
 
-        self.conn.commit()
+        # Migrate: add content column to documents if it doesn't exist yet
+        try:
+            self.conn.execute("ALTER TABLE documents ADD COLUMN content TEXT")
+            self.conn.commit()
+        except Exception:
+            pass  # Column already exists
 
     def close(self):
         self.conn.close()
@@ -403,3 +408,34 @@ class DatabaseManager:
             (doc_id,),
         )
         self.conn.commit()
+
+    def update_document_content(self, doc_id: int, content: str) -> None:
+        """Store the raw text content of a document."""
+        self.conn.execute(
+            "UPDATE documents SET content = ? WHERE id = ?",
+            (content, doc_id),
+        )
+        self.conn.commit()
+
+    def get_project_documents_with_content(self, project_id: int) -> list:
+        """Return documents in a project that have stored content, with their entity names."""
+        doc_rows = self.conn.execute(
+            """
+            SELECT d.id, d.content
+            FROM documents d
+            JOIN project_documents pd ON d.id = pd.doc_id
+            WHERE pd.project_id = ? AND d.content IS NOT NULL AND d.content != ''
+            ORDER BY d.created_at
+            """,
+            (project_id,),
+        ).fetchall()
+
+        result = []
+        for doc_id, content in doc_rows:
+            entity_rows = self.conn.execute(
+                "SELECT DISTINCT name FROM entities WHERE source_doc_id = ?",
+                (doc_id,),
+            ).fetchall()
+            entity_names = [row[0] for row in entity_rows]
+            result.append({"id": doc_id, "content": content, "entity_names": entity_names})
+        return result

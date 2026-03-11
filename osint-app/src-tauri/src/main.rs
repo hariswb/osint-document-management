@@ -585,11 +585,13 @@ async fn batch_process_documents(doc_ids: Vec<i32>, options: DocumentProcessOpti
 async fn get_network_data(
     project_id: Option<i32>,
     entity_types: Option<String>,
-    exclude_entities: Option<String>
+    exclude_entities: Option<String>,
+    context_window: Option<String>,
+    window_size: Option<i32>,
 ) -> Result<NetworkData, String> {
     let client = reqwest::Client::new();
     let mut url = format!("{}/api/network", API_BASE_URL);
-    
+
     // Build query parameters
     let mut params = Vec::new();
     if let Some(pid) = project_id {
@@ -601,18 +603,24 @@ async fn get_network_data(
     if let Some(exclude) = exclude_entities {
         params.push(format!("exclude_entities={}", urlencoding::encode(&exclude)));
     }
-    
+    if let Some(cw) = context_window {
+        params.push(format!("context_window={}", cw));
+    }
+    if let Some(ws) = window_size {
+        params.push(format!("window_size={}", ws));
+    }
+
     if !params.is_empty() {
         url.push_str("?");
         url.push_str(&params.join("&"));
     }
-    
+
     let response = client
         .get(&url)
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    
+
     if response.status().is_success() {
         let data: NetworkData = response.json().await.map_err(|e| e.to_string())?;
         Ok(data)

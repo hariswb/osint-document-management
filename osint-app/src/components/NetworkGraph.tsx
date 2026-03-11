@@ -16,6 +16,7 @@ interface Link extends d3.SimulationLinkDatum<Node> {
   target: string | Node;
   relationship_type: string;
   confidence: number | null;
+  count?: number;
 }
 
 interface NetworkData {
@@ -54,6 +55,8 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
   );
   const [hideInput, setHideInput] = useState("");
   const [excludedEntities, setExcludedEntities] = useState<string[]>([]);
+  const [contextWindow, setContextWindow] = useState<"sentence" | "paragraph" | "sliding">("sentence");
+  const [windowSize, setWindowSize] = useState(300);
 
   // Fetch network data from API
   const fetchNetworkData = async () => {
@@ -64,8 +67,12 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
         projectId?: number;
         entityTypes?: string;
         excludeEntities?: string;
+        contextWindow?: "sentence" | "paragraph" | "sliding";
+        windowSize?: number;
       } = {
         projectId: currentProject.id,
+        contextWindow,
+        windowSize: contextWindow === "sliding" ? windowSize : undefined,
       };
 
       if (selectedTypes.length > 0 && selectedTypes.length < ENTITY_TYPES.length) {
@@ -100,19 +107,33 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
     const nodeIds = new Set(typeFilteredNodes.map((n) => n.id));
 
     // Filter links to only include visible nodes
-    const filteredLinks = data.links.filter(
+    const visibleLinks = data.links.filter(
       (link) =>
         nodeIds.has(typeof link.source === "string" ? link.source : link.source.id) &&
         nodeIds.has(typeof link.target === "string" ? link.target : link.target.id)
     );
 
+    // Deduplicate links — merge same entity-pair into one edge, summing counts
+    const linkMap = new Map<string, Link>();
+    visibleLinks.forEach((link) => {
+      const srcId = typeof link.source === "string" ? link.source : link.source.id;
+      const tgtId = typeof link.target === "string" ? link.target : link.target.id;
+      const key = [srcId, tgtId].sort().join("|||");
+      const existing = linkMap.get(key);
+      if (existing) {
+        existing.count = (existing.count || 1) + (link.count || 1);
+        existing.confidence = Math.max(existing.confidence || 0, link.confidence || 0);
+      } else {
+        linkMap.set(key, { ...link, source: srcId, target: tgtId, count: link.count || 1 });
+      }
+    });
+    const filteredLinks = Array.from(linkMap.values());
+
     // Calculate connection counts for dynamic sizing
     const connectionCounts: Record<string, number> = {};
     filteredLinks.forEach((link) => {
-      const sourceId =
-        typeof link.source === "string" ? link.source : link.source.id;
-      const targetId =
-        typeof link.target === "string" ? link.target : link.target.id;
+      const sourceId = typeof link.source === "string" ? link.source : link.source.id;
+      const targetId = typeof link.target === "string" ? link.target : link.target.id;
       connectionCounts[sourceId] = (connectionCounts[sourceId] || 0) + 1;
       connectionCounts[targetId] = (connectionCounts[targetId] || 0) + 1;
     });
@@ -131,7 +152,7 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
   // Initial data fetch
   useEffect(() => {
     fetchNetworkData();
-  }, [excludedEntities, currentProject.id]);
+  }, [excludedEntities, currentProject.id, contextWindow, windowSize]);
 
   // Render D3 graph with Canvas
   useEffect(() => {
@@ -165,6 +186,31 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
     }
 
     let transform = d3.zoomIdentity;
+    let draggedNode: Node | null = null;
+
+    const getNodeRadius = (node: Node) =>
+      6 + Math.sqrt(node.connectionCount || 0) * 5;
+
+    const getGraphPos = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left - transform.x) / transform.k,
+        y: (e.clientY - rect.top - transform.y) / transform.k,
+      };
+    };
+
+    const findNode = (x: number, y: number): Node | null => {
+      for (const node of filteredData.nodes) {
+        if (node.x == null || node.y == null) continue;
+        const r = getNodeRadius(node);
+        const dx = x - node.x;
+        const dy = y - node.y;
+        if (dx * dx + dy * dy < r * r) return node;
+      }
+      return null;
+    };
+
+    let needsRedraw = false;
 
     const draw = () => {
       ctx.save();
@@ -172,44 +218,40 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.k, transform.k);
 
-      ctx.strokeStyle = "#4b5563";
-      ctx.globalAlpha = 0.6;
-      ctx.lineWidth = 1.5;
+      // Draw links — thickness proportional to co-occurrence count
       filteredData.links.forEach((link) => {
         const source = link.source as Node;
         const target = link.target as Node;
-        if (!source.x || !source.y || !target.x || !target.y) return;
+        if (source.x == null || source.y == null || target.x == null || target.y == null) return;
+        const count = link.count || 1;
+        ctx.strokeStyle = "#4b5563";
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = Math.min(1 + count * 0.4, 6);
         ctx.beginPath();
         ctx.moveTo(source.x, source.y);
         ctx.lineTo(target.x, target.y);
         ctx.stroke();
       });
 
+      // Draw nodes — radius scales with edge count
       ctx.globalAlpha = 1;
       filteredData.nodes.forEach((node) => {
-        if (!node.x || !node.y) return;
-        const baseSize = 18;
-        const connectionBonus = Math.min((node.connectionCount || 0) * 2, 15);
-        const radius = baseSize + connectionBonus;
+        if (node.x == null || node.y == null) return;
+        const radius = getNodeRadius(node);
 
         ctx.beginPath();
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
         ctx.fillStyle = getNodeColor(node.type);
         ctx.fill();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#1e293b";
+        ctx.lineWidth = 1.5;
         ctx.stroke();
 
+        // Name label below node (no type abbreviation inside)
         if (transform.k > 0.5) {
-          ctx.fillStyle = "#fff";
-          ctx.font = "bold 9px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(node.type, node.x, node.y);
-        }
-
-        if (transform.k > 0.7) {
+          ctx.fillStyle = "#e2e8f0";
           ctx.font = "500 11px sans-serif";
+          ctx.textAlign = "center";
           ctx.textBaseline = "top";
           ctx.fillText(node.name, node.x, node.y + radius + 4);
         }
@@ -218,23 +260,21 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
       ctx.restore();
     };
 
-    let needsRedraw = false;
-
     const simulation = d3
       .forceSimulation(filteredData.nodes)
-      .alphaDecay(0.05)
-      .velocityDecay(0.5)
-      .alphaMin(0.05)
+      .alphaDecay(0.03)
+      .velocityDecay(0.4)
+      .alphaMin(0.001)
       .force(
         "link",
         d3
           .forceLink(filteredData.links)
           .id((d: any) => d.id)
-          .distance(120)
+          .distance(100)
       )
-      .force("charge", d3.forceManyBody().strength(-300))
+      .force("charge", d3.forceManyBody().strength(-80))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(30));
+      .force("collision", d3.forceCollide().radius((d: any) => getNodeRadius(d) + 6));
 
     simulation.on("tick", () => {
       if (!needsRedraw) {
@@ -246,9 +286,21 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
       }
     });
 
+    // Zoom — disabled when clicking directly on a node so drag takes over
     const zoom = d3
       .zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.1, 4])
+      .filter((event: Event) => {
+        const e = event as MouseEvent;
+        if (e.type === "wheel") return true;
+        if (e.type === "mousedown" && e.button === 0) {
+          const rect = canvas.getBoundingClientRect();
+          const x = (e.clientX - rect.left - transform.x) / transform.k;
+          const y = (e.clientY - rect.top - transform.y) / transform.k;
+          return !findNode(x, y);
+        }
+        return false;
+      })
       .on("zoom", (event) => {
         transform = event.transform;
         if (!needsRedraw) {
@@ -262,71 +314,43 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
 
     d3.select(canvas).call(zoom);
 
-    let draggedNode: Node | null = null;
-
-    const getMousePos = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      return {
-        x: (e.clientX - rect.left - transform.x) / transform.k,
-        y: (e.clientY - rect.top - transform.y) / transform.k,
-      };
-    };
-
-    const findNode = (x: number, y: number): Node | null => {
-      for (const node of filteredData.nodes) {
-        if (!node.x || !node.y) continue;
-        const baseSize = 18;
-        const connectionBonus = Math.min((node.connectionCount || 0) * 2, 15);
-        const radius = baseSize + connectionBonus;
-        const dx = x - node.x;
-        const dy = y - node.y;
-        if (dx * dx + dy * dy < radius * radius) return node;
-      }
-      return null;
-    };
-
+    // Node drag handlers
     canvas.addEventListener("mousedown", (e) => {
-      const pos = getMousePos(e);
-      draggedNode = findNode(pos.x, pos.y);
-      if (draggedNode) {
-        draggedNode.fx = draggedNode.x;
-        draggedNode.fy = draggedNode.y;
+      if (e.button !== 0) return;
+      const pos = getGraphPos(e);
+      const node = findNode(pos.x, pos.y);
+      if (node) {
+        draggedNode = node;
+        node.fx = node.x;
+        node.fy = node.y;
         simulation.alphaTarget(0.3).restart();
+        canvas.style.cursor = "grabbing";
       }
     });
 
     canvas.addEventListener("mousemove", (e) => {
-      if (!draggedNode) return;
-      const pos = getMousePos(e);
-      draggedNode.fx = pos.x;
-      draggedNode.fy = pos.y;
+      if (draggedNode) {
+        const pos = getGraphPos(e);
+        draggedNode.fx = pos.x;
+        draggedNode.fy = pos.y;
+        return;
+      }
+      const pos = getGraphPos(e);
+      canvas.style.cursor = findNode(pos.x, pos.y) ? "grab" : "default";
     });
 
-    canvas.addEventListener("mouseup", () => {
+    const stopDrag = () => {
       if (draggedNode) {
         draggedNode.fx = null;
         draggedNode.fy = null;
         draggedNode = null;
         simulation.alphaTarget(0);
+        canvas.style.cursor = "default";
       }
-    });
+    };
 
-    canvas.addEventListener("mouseleave", () => {
-      if (draggedNode) {
-        draggedNode.fx = null;
-        draggedNode.fy = null;
-        draggedNode = null;
-        simulation.alphaTarget(0);
-      }
-    });
-
-    canvas.style.cursor = "grab";
-    canvas.addEventListener("mousedown", () => {
-      if (draggedNode) canvas.style.cursor = "grabbing";
-    });
-    canvas.addEventListener("mouseup", () => {
-      canvas.style.cursor = "grab";
-    });
+    canvas.addEventListener("mouseup", stopDrag);
+    canvas.addEventListener("mouseleave", stopDrag);
 
     return () => {
       simulation.stop();
@@ -418,6 +442,34 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
                 {type}
               </button>
             ))}
+          </div>
+
+          <div className="h-6 w-px bg-gray-700" />
+
+          {/* Context Window Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-400">Window:</span>
+            <select
+              value={contextWindow}
+              onChange={(e) => setContextWindow(e.target.value as "sentence" | "paragraph" | "sliding")}
+              className="px-2 py-1.5 bg-gray-900 border border-gray-700 rounded-md text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="sentence">Sentence</option>
+              <option value="paragraph">Paragraph</option>
+              <option value="sliding">Sliding</option>
+            </select>
+            {contextWindow === "sliding" && (
+              <input
+                type="number"
+                value={windowSize}
+                min={50}
+                max={1000}
+                step={50}
+                onChange={(e) => setWindowSize(Number(e.target.value))}
+                className="w-20 px-2 py-1.5 bg-gray-900 border border-gray-700 rounded-md text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                title="Window size in words"
+              />
+            )}
           </div>
 
           <div className="h-6 w-px bg-gray-700" />
