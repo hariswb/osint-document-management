@@ -202,14 +202,29 @@ class IndonesianNERExtractor:
         return text
 
     def _deduplicate_entities(self, entities: List[Entity]) -> List[Entity]:
-        """Remove duplicate entities."""
-        seen = set()
+        """Remove duplicate and substring entities (keep the longest form)."""
+        # Exact dedup by (text.lower(), entity_type)
+        seen: set = set()
         unique = []
-
         for entity in entities:
             key = (entity.text.lower(), entity.entity_type)
             if key not in seen:
                 seen.add(key)
                 unique.append(entity)
 
-        return unique
+        # Remove entities whose text is a strict substring of another entity of the same type
+        texts_by_type: dict = {}
+        for entity in unique:
+            texts_by_type.setdefault(entity.entity_type, set()).add(entity.text.lower())
+
+        result = []
+        for entity in unique:
+            same_type = texts_by_type.get(entity.entity_type, set())
+            is_substring = any(
+                entity.text.lower() != other and entity.text.lower() in other
+                for other in same_type
+            )
+            if not is_substring:
+                result.append(entity)
+
+        return result

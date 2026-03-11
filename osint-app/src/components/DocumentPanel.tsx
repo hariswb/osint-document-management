@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FileText, Upload, Trash2, Eye, Calendar, File, Globe, Loader2, AlertCircle, CheckCircle, Clock, FolderKanban, RefreshCw, Play } from "lucide-react";
+import { FileText, Upload, Trash2, Eye, Calendar, File, Globe, Loader2, AlertCircle, CheckCircle, Clock, FolderKanban, RefreshCw, Play, PlayCircle } from "lucide-react";
 import api, { Project, Document as ApiDocument } from "../services/api";
 
 interface DocumentPanelProps {
@@ -64,6 +64,7 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [processingDocId, setProcessingDocId] = useState<number | null>(null);
+  const [processingAll, setProcessingAll] = useState(false);
 
   useEffect(() => {
     fetchDocuments();
@@ -118,6 +119,23 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
       fetchDocuments();
     } catch (err) {
       console.error("Error removing document:", err);
+    }
+  };
+
+  const handleProcessAll = async () => {
+    const pendingIds = documents
+      .filter((d) => d.status === "pending" || d.status === "error")
+      .map((d) => d.id);
+    if (pendingIds.length === 0) return;
+    setProcessingAll(true);
+    try {
+      await api.batchProcessDocuments(pendingIds, { nerEnabled: true, extractRelationships: true });
+      await fetchDocuments();
+    } catch (err) {
+      console.error("Error processing documents:", err);
+      alert(`Failed to process documents: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setProcessingAll(false);
     }
   };
 
@@ -190,7 +208,7 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button 
+          <button
             onClick={fetchDocuments}
             disabled={loading}
             className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-sm transition-colors text-sm"
@@ -198,6 +216,20 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+          {documents.some((d) => d.status === "pending" || d.status === "error") && (
+            <button
+              onClick={handleProcessAll}
+              disabled={processingAll}
+              className="flex items-center gap-2 px-3 py-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 disabled:opacity-50 rounded-sm transition-colors text-sm font-medium"
+            >
+              {processingAll ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <PlayCircle className="w-4 h-4" />
+              )}
+              Process All
+            </button>
+          )}
           <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-sm transition-colors text-sm">
             <Upload className="w-4 h-4" />
             Upload Files

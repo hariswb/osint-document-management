@@ -1108,30 +1108,29 @@ async def get_network_data(
         if exclude_entities:
             exclude_filter = [e.strip().lower() for e in exclude_entities.split(",")]
 
-        # Build base query for entities
+        # One canonical node per unique (name, entity_type) using MIN(id)
         if project_id:
-            # Get entities from specific project
             query = """
-                SELECT DISTINCT e.id, e.name, e.entity_type, e.confidence
+                SELECT MIN(e.id) as id, e.name, e.entity_type, MAX(e.confidence) as confidence
                 FROM entities e
                 JOIN project_documents pd ON e.source_doc_id = pd.doc_id
                 WHERE pd.project_id = ?
             """
             params = [project_id]
         else:
-            # Get all entities
             query = """
-                SELECT id, name, entity_type, confidence
+                SELECT MIN(id) as id, name, entity_type, MAX(confidence) as confidence
                 FROM entities
                 WHERE 1=1
             """
             params = []
 
-        # Add type filter
         if type_filter:
-            placeholders = ", ".join(["?"] * len(type_filter))
-            query += f" AND entity_type IN ({placeholders})"
+            type_placeholders = ", ".join(["?"] * len(type_filter))
+            query += f" AND {'e.' if project_id else ''}entity_type IN ({type_placeholders})"
             params.extend(type_filter)
+
+        query += f" GROUP BY LOWER({'e.' if project_id else ''}name), {'e.' if project_id else ''}entity_type"
 
         # Execute entity query
         cursor = db_manager.conn.execute(query, params)
@@ -1164,36 +1163,52 @@ async def get_network_data(
         if not entity_ids:
             return {"nodes": [], "links": []}
 
-        # Get relationships between these entities
-        entity_id_list = list(entity_ids)
-        placeholders = ", ".join(["?"] * len(entity_id_list))
+        # Derive co-occurrence edges using name-based join mapped to canonical IDs.
+        # Two entities are connected if they share a document; MIN(id) gives the same
+        # canonical ID used in the nodes query above.
+        if project_id:
+            cooc_query = """
+                SELECT
+                    MIN(e1.id) as source_id,
+                    MIN(e2.id) as target_id,
+                    COUNT(DISTINCT e1.source_doc_id) as doc_count
+                FROM entities e1
+                JOIN entities e2
+                    ON e1.source_doc_id = e2.source_doc_id
+                    AND LOWER(e1.name) < LOWER(e2.name)
+                JOIN project_documents pd ON e1.source_doc_id = pd.doc_id
+                WHERE pd.project_id = ?
+                GROUP BY LOWER(e1.name), e1.entity_type, LOWER(e2.name), e2.entity_type
+            """
+            cooc_params = [project_id]
+        else:
+            cooc_query = """
+                SELECT
+                    MIN(e1.id) as source_id,
+                    MIN(e2.id) as target_id,
+                    COUNT(DISTINCT e1.source_doc_id) as doc_count
+                FROM entities e1
+                JOIN entities e2
+                    ON e1.source_doc_id = e2.source_doc_id
+                    AND LOWER(e1.name) < LOWER(e2.name)
+                GROUP BY LOWER(e1.name), e1.entity_type, LOWER(e2.name), e2.entity_type
+            """
+            cooc_params = []
 
-        rel_query = f"""
-            SELECT id, source_entity_id, target_entity_id, relationship_type, confidence, evidence
-            FROM relationships
-            WHERE source_entity_id IN ({placeholders}) AND target_entity_id IN ({placeholders})
-        """
+        cooc_cursor = db_manager.conn.execute(cooc_query, cooc_params)
+        cooc_rows = cooc_cursor.fetchall()
 
-        rel_params = entity_id_list + entity_id_list
-        rel_cursor = db_manager.conn.execute(rel_query, rel_params)
-        rel_rows = rel_cursor.fetchall()
-
-        links = []
-        for row in rel_rows:
-            source_id = row[1]
-            target_id = row[2]
-
-            # Only include if both entities are in our filtered set
-            if source_id in entity_ids and target_id in entity_ids:
-                links.append(
-                    {
-                        "source": str(source_id),
-                        "target": str(target_id),
-                        "relationship_type": row[3],
-                        "confidence": row[4],
-                        "evidence": row[5],
-                    }
-                )
+        # Only emit edges where both endpoints survived type/exclude filtering
+        links = [
+            {
+                "source": str(row[0]),
+                "target": str(row[1]),
+                "relationship_type": "co-occurrence",
+                "confidence": min(1.0, 0.5 + (row[2] - 1) * 0.1),
+            }
+            for row in cooc_rows
+            if row[0] in entity_ids and row[1] in entity_ids
+        ]
 
         return {"nodes": nodes, "links": links}
 

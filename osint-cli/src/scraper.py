@@ -1,12 +1,10 @@
-"""Web scraping module using Scrapling with Playwright fallback."""
+"""Web scraping module using Scrapling for HTTP and stealthy browser fetching."""
 
 import re
-import time
 from dataclasses import dataclass
 from typing import List, Optional
-from urllib.parse import urljoin, urlparse
-import httpx
-from bs4 import BeautifulSoup
+from urllib.parse import urlparse
+from scrapling.fetchers import Fetcher, StealthyFetcher
 
 
 @dataclass
@@ -23,35 +21,20 @@ class ScrapedArticle:
 
 
 class AdaptiveScraper:
-    """Adaptive web scraper with anti-bot bypass capabilities and Playwright fallback."""
+    """Adaptive web scraper with anti-bot bypass using Scrapling fetchers."""
 
-    def __init__(self, delay: float = 1.0, timeout: int = 30):
+    def __init__(self, timeout: int = 30):
         """
         Initialize the scraper.
 
         Args:
-            delay: Delay between requests in seconds
             timeout: Request timeout in seconds
         """
-        self.delay = delay
         self.timeout = timeout
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-        }
 
     def scrape(self, url: str) -> Optional[ScrapedArticle]:
         """
-        Scrape a single URL with fallback to Playwright for JS-heavy sites.
+        Scrape a single URL with fallback to StealthyFetcher for JS-heavy sites.
 
         Args:
             url: URL to scrape
@@ -59,97 +42,58 @@ class AdaptiveScraper:
         Returns:
             ScrapedArticle or None if failed
         """
-        # Try regular HTTP scraping first
         article = self._scrape_http(url)
         if article:
             return article
 
-        # Fall back to Playwright for JS-heavy sites
-        print(f"HTTP scraping failed for {url}, trying Playwright fallback...")
-        article = self._scrape_playwright(url)
+        print(f"HTTP scraping failed for {url}, trying StealthyFetcher fallback...")
+        article = self._scrape_stealthy(url)
         if article:
             return article
 
         return None
 
     def _scrape_http(self, url: str) -> Optional[ScrapedArticle]:
-        """Scrape using HTTP requests."""
+        """Scrape using Scrapling's Fetcher for HTTP requests."""
         try:
-            time.sleep(self.delay)
+            page = Fetcher().get(url, stealthy_headers=True, timeout=self.timeout)
 
-            with httpx.Client(
-                timeout=self.timeout, headers=self.headers, follow_redirects=True
-            ) as client:
-                response = client.get(url)
-                response.raise_for_status()
+            article = self._parse_scrapling_page(url, page)
 
-                # Check if response is HTML
-                content_type = response.headers.get("content-type", "")
-                if (
-                    "text/html" not in content_type
-                    and "application/xhtml" not in content_type
-                ):
-                    print(f"Skipping non-HTML content: {content_type}")
-                    return None
-
-                article = self._parse_html(url, response.text)
-
-                # Only return if we got meaningful content
-                if article and len(article.content.strip()) > 100:
-                    return article
-                else:
-                    print(
-                        f"HTTP scrape returned insufficient content ({len(article.content) if article else 0} chars)"
-                    )
-                    return None
+            if article and len(article.content.strip()) > 100:
+                return article
+            else:
+                print(
+                    f"HTTP scrape returned insufficient content ({len(article.content) if article else 0} chars)"
+                )
+                return None
 
         except Exception as e:
             print(f"HTTP scraping error for {url}: {e}")
             return None
 
-    def _scrape_playwright(self, url: str) -> Optional[ScrapedArticle]:
-        """Scrape using Playwright for JavaScript-heavy sites."""
+    def _scrape_stealthy(self, url: str) -> Optional[ScrapedArticle]:
+        """Scrape using Scrapling's StealthyFetcher for JavaScript-heavy sites."""
         try:
-            from playwright.sync_api import sync_playwright
+            page = StealthyFetcher.fetch(
+                url, headless=True, network_idle=True, timeout=self.timeout * 1000
+            )
 
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context(
-                    user_agent=self.headers["User-Agent"],
-                    viewport={"width": 1920, "height": 1080},
+            article = self._parse_scrapling_page(url, page)
+
+            if article and len(article.content.strip()) > 100:
+                print(
+                    f"StealthyFetcher successfully scraped {len(article.content)} chars"
                 )
-                page = context.new_page()
+                return article
+            else:
+                print(
+                    f"StealthyFetcher returned insufficient content ({len(article.content) if article else 0} chars)"
+                )
+                return None
 
-                # Navigate and wait for content to load
-                page.goto(url, wait_until="networkidle", timeout=self.timeout * 1000)
-
-                # Wait a bit more for any lazy-loaded content
-                page.wait_for_timeout(2000)
-
-                # Get the page content
-                html = page.content()
-
-                browser.close()
-
-                article = self._parse_html(url, html)
-
-                # Only return if we got meaningful content
-                if article and len(article.content.strip()) > 100:
-                    print(
-                        f"Playwright successfully scraped {len(article.content)} chars"
-                    )
-                    return article
-                else:
-                    print(
-                        f"Playwright returned insufficient content ({len(article.content) if article else 0} chars)"
-                    )
-                    return None
-
-        except ImportError:
-            print("Playwright not installed, skipping fallback")
-            return None
         except Exception as e:
-            print(f"Playwright scraping error for {url}: {e}")
+            print(f"StealthyFetcher scraping error for {url}: {e}")
             return None
 
     def scrape_multiple(self, urls: List[str]) -> List[ScrapedArticle]:
@@ -169,23 +113,12 @@ class AdaptiveScraper:
                 articles.append(article)
         return articles
 
-    def _parse_html(self, url: str, html: str) -> ScrapedArticle:
-        """Parse HTML content and extract article data."""
-        soup = BeautifulSoup(html, "lxml")
-
-        # Extract title
-        title = self._extract_title(soup)
-
-        # Extract content
-        content = self._extract_content(soup)
-
-        # Extract author
-        author = self._extract_author(soup)
-
-        # Extract publish date
-        publish_date = self._extract_date(soup)
-
-        # Calculate word count
+    def _parse_scrapling_page(self, url: str, page) -> ScrapedArticle:
+        """Parse Scrapling page object and extract article data."""
+        title = self._extract_title(page)
+        content = self._extract_content(page)
+        author = self._extract_author(page)
+        publish_date = self._extract_date(page)
         word_count = len(content.split())
 
         return ScrapedArticle(
@@ -198,37 +131,24 @@ class AdaptiveScraper:
             relevance_score=0.0,
         )
 
-    def _extract_title(self, soup: BeautifulSoup) -> str:
+    def _extract_title(self, page) -> str:
         """Extract article title."""
-        # Try common title selectors
-        selectors = [
-            "h1.article-title",
-            "h1.entry-title",
-            "h1.post-title",
-            "h1",
-            '[property="og:title"]',
-            "title",
-        ]
+        # Prefer OG title (attribute-based, needs XPath)
+        og = page.xpath('//meta[@property="og:title"]/@content').get()
+        if og:
+            return str(og).strip()
 
-        for selector in selectors:
-            elem = soup.select_one(selector)
-            if elem:
-                if selector == '[property="og:title"]':
-                    content = elem.get("content")
-                    return str(content) if content else ""
-                return elem.get_text(strip=True)
+        for selector in ["h1.article-title", "h1.entry-title", "h1.post-title", "h1", "title"]:
+            elems = page.css(selector)
+            if elems:
+                text = elems[0].get_all_text().strip()
+                if text:
+                    return text
 
         return ""
 
-    def _extract_content(self, soup: BeautifulSoup) -> str:
+    def _extract_content(self, page) -> str:
         """Extract article content."""
-        # Remove unwanted elements
-        for elem in soup(
-            ["script", "style", "nav", "header", "footer", "aside", "advertisement"]
-        ):
-            elem.decompose()
-
-        # Try common content selectors
         selectors = [
             "article",
             '[class*="article-content"]',
@@ -241,70 +161,62 @@ class AdaptiveScraper:
         ]
 
         for selector in selectors:
-            content_elem = soup.select_one(selector)
-            if content_elem:
-                # Get paragraphs
-                paragraphs = content_elem.find_all("p")
+            content_elems = page.css(selector)
+            if content_elems:
+                paragraphs = content_elems[0].css("p")
                 if paragraphs:
-                    text = "\n\n".join(
-                        p.get_text(strip=True)
+                    texts = [
+                        p.get_all_text().strip()
                         for p in paragraphs
-                        if len(p.get_text(strip=True)) > 20
-                    )
+                        if len(p.get_all_text().strip()) > 20
+                    ]
+                    text = "\n\n".join(texts)
                     if len(text) > 200:
                         return self._clean_text(text)
 
-        # Fallback: get all paragraphs
-        paragraphs = soup.find_all("p")
-        text = "\n\n".join(
-            p.get_text(strip=True)
-            for p in paragraphs
-            if len(p.get_text(strip=True)) > 20
-        )
-        return self._clean_text(text)
-
-    def _extract_author(self, soup: BeautifulSoup) -> Optional[str]:
-        """Extract article author."""
-        selectors = [
-            '[class*="author"]',
-            '[class*="byline"]',
-            '[rel="author"]',
-            '[name="author"]',
+        # Fallback: collect all paragraphs on the page
+        texts = [
+            p.get_all_text().strip()
+            for p in page.css("p")
+            if len(p.get_all_text().strip()) > 20
         ]
+        return self._clean_text("\n\n".join(texts))
 
-        for selector in selectors:
-            elem = soup.select_one(selector)
-            if elem:
-                if selector == '[name="author"]':
-                    content = elem.get("content")
-                    return str(content) if content else None
-                return elem.get_text(strip=True)
+    def _extract_author(self, page) -> Optional[str]:
+        """Extract article author."""
+        # Prefer meta name=author (attribute-based)
+        meta = page.xpath('//meta[@name="author"]/@content').get()
+        if meta:
+            return str(meta).strip()
+
+        for selector in ['[class*="author"]', '[class*="byline"]', '[rel="author"]']:
+            elems = page.css(selector)
+            if elems:
+                text = elems[0].get_all_text().strip()
+                if text:
+                    return text
 
         return None
 
-    def _extract_date(self, soup: BeautifulSoup) -> Optional[str]:
+    def _extract_date(self, page) -> Optional[str]:
         """Extract publish date."""
-        selectors = [
-            '[property="article:published_time"]',
-            '[property="og:updated_time"]',
-            '[class*="date"]',
-            '[class*="published"]',
-            "time",
-        ]
+        # Try meta properties first (attribute-based)
+        for xpath in [
+            '//meta[@property="article:published_time"]/@content',
+            '//meta[@property="og:updated_time"]/@content',
+            '//time/@datetime',
+        ]:
+            val = page.xpath(xpath).get()
+            if val:
+                return str(val).strip()
 
-        for selector in selectors:
-            elem = soup.select_one(selector)
-            if elem:
-                if selector in [
-                    '[property="article:published_time"]',
-                    '[property="og:updated_time"]',
-                ]:
-                    content = elem.get("content")
-                    return str(content) if content else None
-                datetime = elem.get("datetime")
-                if datetime:
-                    return str(datetime)
-                return elem.get_text(strip=True)
+        # Fallback: text from date/time elements
+        for selector in ['[class*="date"]', '[class*="published"]', "time"]:
+            elems = page.css(selector)
+            if elems:
+                text = elems[0].get_all_text().strip()
+                if text:
+                    return text
 
         return None
 
