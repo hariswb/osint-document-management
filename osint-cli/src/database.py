@@ -289,6 +289,24 @@ class DatabaseManager:
         result = self.conn.execute("SELECT COUNT(*) FROM documents").fetchone()
         return result[0]
 
+    def get_project_entity_count(self, project_id: int) -> int:
+        """Get entity count for a specific project."""
+        result = self.conn.execute(
+            """SELECT COUNT(DISTINCT e.id) FROM entities e
+               JOIN project_documents pd ON e.source_doc_id = pd.doc_id
+               WHERE pd.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        return result[0]
+
+    def get_project_document_count(self, project_id: int) -> int:
+        """Get document count for a specific project."""
+        result = self.conn.execute(
+            "SELECT COUNT(*) FROM project_documents WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        return result[0]
+
     def get_document(self, doc_id: int) -> tuple:
         """Get a document by ID."""
         result = self.conn.execute(

@@ -173,8 +173,8 @@ export const api = {
   },
 
   // Get database statistics
-  getStats: async (): Promise<Stats> => {
-    return await invoke("get_stats");
+  getStats: async (projectId?: number): Promise<Stats> => {
+    return await invoke("get_stats", { projectId: projectId ?? null });
   },
 
   // Get entities from database

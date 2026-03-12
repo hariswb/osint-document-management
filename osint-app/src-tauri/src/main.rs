@@ -207,14 +207,18 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-async fn get_stats() -> Result<Stats, String> {
+async fn get_stats(project_id: Option<i32>) -> Result<Stats, String> {
     let client = reqwest::Client::new();
+    let mut url = format!("{}/api/stats", API_BASE_URL);
+    if let Some(pid) = project_id {
+        url.push_str(&format!("?project_id={}", pid));
+    }
     let response = client
-        .get(format!("{}/api/stats", API_BASE_URL))
+        .get(url)
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    
+
     if response.status().is_success() {
         let stats: Stats = response.json().await.map_err(|e| e.to_string())?;
         Ok(stats)

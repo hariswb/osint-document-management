@@ -49,7 +49,9 @@ function App() {
           setBackendConnected(true);
           fetchProjects();
         }
-        const statsData = await api.getStats();
+        const statsData = currentProjectRef.current
+          ? await api.getStats(currentProjectRef.current.id)
+          : { entities: 0, documents: 0, relationships: 0 };
         // Only update stats state when values actually changed to avoid re-renders
         setStats(prev => {
           if (
@@ -89,6 +91,8 @@ function App() {
     setCurrentProject(project);
     if (project) {
       setActiveTab("search");
+    } else {
+      setStats({ entities: 0, documents: 0, relationships: 0 });
     }
   };
 

@@ -60,6 +60,7 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
   const [excludedEntities, setExcludedEntities] = useState<string[]>([]);
   const [contextWindow, setContextWindow] = useState<"sentence" | "paragraph" | "sliding">("sentence");
   const [windowSize, setWindowSize] = useState(300);
+  const [minConfidence, setMinConfidence] = useState(0);
 
   // Fetch network data from API
   const fetchNetworkData = async () => {
@@ -102,9 +103,9 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
       return;
     }
 
-    // Filter nodes by type
+    // Filter nodes by type and confidence
     const typeFilteredNodes = data.nodes.filter((node) =>
-      selectedTypes.includes(node.type)
+      selectedTypes.includes(node.type) && (node.confidence ?? 0) >= minConfidence
     );
 
     const nodeIds = new Set(typeFilteredNodes.map((n) => n.id));
@@ -150,7 +151,7 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
       nodes: nodesWithConnections,
       links: filteredLinks,
     });
-  }, [data, selectedTypes]);
+  }, [data, selectedTypes, minConfidence]);
 
   // Initial data fetch
   useEffect(() => {
@@ -459,6 +460,34 @@ export default function NetworkGraph({ currentProject }: NetworkGraphProps) {
                 className="w-16 px-1.5 py-0.5 bg-slate-900 border border-slate-700 rounded-sm text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
+          </div>
+
+          <div className="w-px h-4 bg-slate-600" />
+
+          {/* Confidence filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-500">Score &gt;</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={minConfidence}
+              onChange={(e) => setMinConfidence(Number(e.target.value))}
+              className="w-20 accent-blue-500"
+            />
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
+              value={minConfidence}
+              onChange={(e) => {
+                const v = Math.min(1, Math.max(0, Number(e.target.value)));
+                setMinConfidence(v);
+              }}
+              className="w-14 px-1.5 py-0.5 bg-slate-900 border border-slate-700 rounded-sm text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
           </div>
 
           <div className="w-px h-4 bg-slate-600" />

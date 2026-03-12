@@ -213,11 +213,15 @@ async def load_ner_model():
 
 
 @app.get("/api/stats")
-async def get_stats():
-    """Get database statistics."""
+async def get_stats(project_id: Optional[int] = None):
+    """Get database statistics, optionally scoped to a project."""
     try:
-        entity_count = db_manager.get_entity_count()
-        doc_count = db_manager.get_document_count()
+        if project_id is not None:
+            entity_count = db_manager.get_project_entity_count(project_id)
+            doc_count = db_manager.get_project_document_count(project_id)
+        else:
+            entity_count = db_manager.get_entity_count()
+            doc_count = db_manager.get_document_count()
         return {
             "entities": entity_count,
             "documents": doc_count,

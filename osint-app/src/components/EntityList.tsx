@@ -39,6 +39,7 @@ export default function EntityList({ currentProject }: EntityListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [stats, setStats] = useState({ entities: 0, people: 0, organizations: 0, locations: 0 });
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
+  const [minConfidence, setMinConfidence] = useState(0);
 
   useEffect(() => {
     fetchEntities();
@@ -74,7 +75,8 @@ export default function EntityList({ currentProject }: EntityListProps) {
     const matchesAllowed = ALLOWED_ENTITY_TYPES.includes(entity.entity_type);
     const matchesFilter = filter === "all" || entity.entity_type === filter;
     const matchesSearch = entity.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesAllowed && matchesFilter && matchesSearch;
+    const matchesConfidence = (entity.confidence ?? 0) >= minConfidence;
+    return matchesAllowed && matchesFilter && matchesSearch && matchesConfidence;
   });
 
   const entityTypes = ["all", ...ALLOWED_ENTITY_TYPES];
@@ -157,6 +159,30 @@ export default function EntityList({ currentProject }: EntityListProps) {
           ))}
         </div>
         <div className="flex-1" />
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-500">Score &gt;</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={minConfidence}
+            onChange={(e) => setMinConfidence(Number(e.target.value))}
+            className="w-20 accent-blue-500"
+          />
+          <input
+            type="number"
+            min={0}
+            max={1}
+            step={0.01}
+            value={minConfidence}
+            onChange={(e) => {
+              const v = Math.min(1, Math.max(0, Number(e.target.value)));
+              setMinConfidence(v);
+            }}
+            className="w-14 px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-200 text-xs font-mono"
+          />
+        </div>
         <input
           type="text"
           value={searchTerm}
