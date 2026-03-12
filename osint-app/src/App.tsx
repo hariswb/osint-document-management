@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, Database, Network, FileText, Settings, FolderKanban, Activity, AlertCircle } from "lucide-react";
 import SearchPanel from "./components/SearchPanel";
 import EntityList from "./components/EntityList";
@@ -16,46 +16,74 @@ function App() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
 
-  useEffect(() => {
-    checkBackendHealth();
-    const interval = setInterval(checkBackendHealth, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Refs to avoid stale closures and debounce transient disconnects
+  const connectedRef = useRef(false);
+  const failureCountRef = useRef(0);
+  const currentProjectRef = useRef<Project | null>(null);
 
   useEffect(() => {
-    if (backendConnected) {
-      fetchProjects();
-      // Auto-refresh projects every 10 seconds
-      const interval = setInterval(fetchProjects, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [backendConnected]);
+    currentProjectRef.current = currentProject;
+  }, [currentProject]);
 
-  const checkBackendHealth = async () => {
-    try {
-      const isHealthy = await api.checkHealth();
-      setBackendConnected(isHealthy);
-      if (isHealthy) {
-        const statsData = await api.getStats();
-        setStats(statsData);
-      }
-    } catch (error) {
-      setBackendConnected(false);
-    }
-  };
-
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
       const data = await api.getProjects();
       setProjects(data);
-      // If current project no longer exists, clear it
-      if (currentProject && !data.find((p: Project) => p.id === currentProject.id)) {
+      // Use ref to check current project (avoids stale closure)
+      const cp = currentProjectRef.current;
+      if (cp && !data.find((p: Project) => p.id === cp.id)) {
         setCurrentProject(null);
       }
     } catch (error) {
       console.error("Failed to fetch projects:", error);
     }
-  };
+  }, []);
+
+  const checkBackendHealth = useCallback(async () => {
+    try {
+      const isHealthy = await api.checkHealth();
+      if (isHealthy) {
+        failureCountRef.current = 0;
+        if (!connectedRef.current) {
+          connectedRef.current = true;
+          setBackendConnected(true);
+          fetchProjects();
+        }
+        const statsData = await api.getStats();
+        // Only update stats state when values actually changed to avoid re-renders
+        setStats(prev => {
+          if (
+            prev.entities === statsData.entities &&
+            prev.documents === statsData.documents &&
+            prev.relationships === statsData.relationships
+          ) {
+            return prev;
+          }
+          return statsData;
+        });
+      } else {
+        failureCountRef.current += 1;
+        // Only mark offline after 2 consecutive failures to avoid transient blips
+        if (failureCountRef.current >= 2 && connectedRef.current) {
+          connectedRef.current = false;
+          setBackendConnected(false);
+        }
+      }
+    } catch {
+      failureCountRef.current += 1;
+      if (failureCountRef.current >= 2 && connectedRef.current) {
+        connectedRef.current = false;
+        setBackendConnected(false);
+      }
+    }
+  }, [fetchProjects]);
+
+  // Health check on mount, then every 15 seconds
+  useEffect(() => {
+    checkBackendHealth();
+    const interval = setInterval(checkBackendHealth, 15000);
+    return () => clearInterval(interval);
+  }, [checkBackendHealth]);
 
   const handleProjectSelect = (project: Project | null) => {
     setCurrentProject(project);

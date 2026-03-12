@@ -327,7 +327,7 @@ async fn check_api_health() -> Result<bool, String> {
     let client = reqwest::Client::new();
     let response = client
         .get(format!("{}/health", API_BASE_URL))
-        .timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(5))
         .send()
         .await;
     

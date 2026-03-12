@@ -74,23 +74,32 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
   useEffect(() => {
     const interval = setInterval(() => {
       if (!processingDocId) {
-        fetchDocuments();
+        fetchDocuments(true);
       }
     }, 5000);
     return () => clearInterval(interval);
   }, [currentProject.id, processingDocId]);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const projectDetails = await api.getProject(currentProject.id);
-      setDocuments(projectDetails.documents || []);
+      const incoming = projectDetails.documents || [];
+      setDocuments(prev => {
+        if (
+          prev.length === incoming.length &&
+          prev.every((d, i) => d.id === incoming[i].id && d.status === incoming[i].status && d.entity_count === incoming[i].entity_count)
+        ) {
+          return prev;
+        }
+        return incoming;
+      });
     } catch (err) {
-      setError("Failed to fetch documents");
+      if (!silent) setError("Failed to fetch documents");
       console.error("Error fetching documents:", err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -171,8 +180,8 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
           <AlertCircle className="w-5 h-5 text-red-400" />
           <div>
             <p className="text-red-400 font-medium">{error}</p>
-            <button 
-              onClick={fetchDocuments}
+            <button
+              onClick={() => fetchDocuments()}
               className="text-sm text-red-400/70 hover:text-red-400 mt-1"
             >
               Click to retry
@@ -198,7 +207,7 @@ export default function DocumentPanel({ currentProject }: DocumentPanelProps) {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchDocuments}
+            onClick={() => fetchDocuments()}
             disabled={loading}
             className="flex items-center gap-1.5 px-2 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-sm transition-colors text-xs"
           >
