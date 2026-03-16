@@ -4,8 +4,10 @@ osint-cli/.venv/
 # OSINT data
 osint-cli/data/
 
-# Python cache
+# Caches
 __pycache__/
+.pytest_cache
+.ruff_cache
 
 # node_modules
 node_modules/
@@ -13,3 +15,4 @@ node_modules/
 # Tauri 
 osint-app/src-tauri/target/
 osint-app/dist/
+
