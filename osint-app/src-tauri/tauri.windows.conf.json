@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "resources/api_server/**/*": "api_server/"
+    }
+  }
+}

@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use tauri::Manager;
 
 const API_BASE_URL: &str = "http://127.0.0.1:8000";
 
@@ -199,6 +201,8 @@ struct RemoveDocumentResult {
     message: String,
     cascade_result: Option<serde_json::Value>,
 }
+
+struct BackendProcess(Mutex<Option<std::process::Child>>);
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -660,6 +664,37 @@ async fn add_search_results_to_project(project_id: i32, results: Vec<SearchResul
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(BackendProcess(Mutex::new(None)))
+        .setup(|app| {
+            // Only spawn the bundled backend in release builds.
+            // In development, start.sh launches the backend separately.
+            #[cfg(not(debug_assertions))]
+            {
+                let resource_dir = app
+                    .path()
+                    .resource_dir()
+                    .expect("failed to resolve resource dir");
+
+                #[cfg(target_os = "windows")]
+                let backend_exe = resource_dir.join("api_server").join("api_server.exe");
+                #[cfg(not(target_os = "windows"))]
+                let backend_exe = resource_dir.join("api_server").join("api_server");
+
+                if backend_exe.exists() {
+                    match std::process::Command::new(&backend_exe).spawn() {
+                        Ok(child) => {
+                            *app.state::<BackendProcess>().0.lock().unwrap() = Some(child);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to spawn backend: {}", e);
+                        }
+                    }
+                } else {
+                    eprintln!("Backend binary not found at {:?}", backend_exe);
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_stats,
@@ -684,6 +719,19 @@ fn main() {
             batch_process_documents,
             add_search_results_to_project
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(mut child) = app_handle
+                    .state::<BackendProcess>()
+                    .0
+                    .lock()
+                    .unwrap()
+                    .take()
+                {
+                    let _ = child.kill();
+                }
+            }
+        });
 }

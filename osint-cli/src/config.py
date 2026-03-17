@@ -1,8 +1,13 @@
+import sys
 from pathlib import Path
 
 
 class Config:
-    PROJECT_ROOT = Path(__file__).parent.parent
+    if getattr(sys, "frozen", False):
+        # Running as PyInstaller bundle — use writable user home dir
+        PROJECT_ROOT = Path.home() / ".osint_tool"
+    else:
+        PROJECT_ROOT = Path(__file__).parent.parent
     DATA_DIR = PROJECT_ROOT / "data"
     DB_PATH = DATA_DIR / "osint.db"
     CACHE_DIR = DATA_DIR / "cache"

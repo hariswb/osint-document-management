@@ -4,7 +4,14 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional
 from urllib.parse import urlparse
-from scrapling.fetchers import Fetcher, StealthyFetcher
+from scrapling.fetchers import Fetcher
+
+try:
+    from scrapling.fetchers import StealthyFetcher
+    _STEALTHY_AVAILABLE = True
+except ImportError:
+    StealthyFetcher = None  # type: ignore[assignment]
+    _STEALTHY_AVAILABLE = False
 
 
 @dataclass
@@ -45,6 +52,10 @@ class AdaptiveScraper:
         article = self._scrape_http(url)
         if article:
             return article
+
+        if not _STEALTHY_AVAILABLE:
+            print(f"HTTP scraping failed for {url}; StealthyFetcher unavailable in this build.")
+            return None
 
         print(f"HTTP scraping failed for {url}, trying StealthyFetcher fallback...")
         article = self._scrape_stealthy(url)
